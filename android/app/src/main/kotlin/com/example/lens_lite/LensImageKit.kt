@@ -34,6 +34,7 @@ import kotlin.math.sqrt
  *
  *  - decode + EXIF orientation  -> BitmapFactory + ExifInterface
  *  - perspective rectification  -> Matrix.setPolyToPoly + Canvas.drawBitmap
+ *  - quarter-turn rotation      -> Bitmap.createBitmap(Matrix)
  *  - tone presets               -> ColorMatrixColorFilter
  *  - encode                     -> Bitmap.compress (one generation, no Dart round trip)
  *  - multi-page PDF             -> JPEG DCTDecode XObjects, hand-written xref
@@ -53,6 +54,7 @@ class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandl
                 val value: Any? = when (call.method) {
                     "analyze" -> analyze(call)
                     "warp" -> warp(call)
+                    "transform" -> transform(call)
                     "thumbnail" -> thumbnail(call)
                     "writePdf" -> writePdf(call)
                     "openFile" -> openFile(call)
@@ -219,6 +221,54 @@ class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandl
             return result
         } finally {
             src.recycle()
+        }
+    }
+
+    // ----------------------------------------------------------- transform --
+
+    /**
+     * Bakes the review stage's edits: a clockwise quarter-turn rotation and a
+     * tone preset, in one decode and one encode.
+     *
+     * The page is a finished JPEG, so there is nothing to rectify here — only
+     * `Bitmap.createBitmap(Matrix)` for the turn and `ColorMatrixColorFilter`
+     * for the tone, both of which the graphics stack already provides.
+     */
+    private fun transform(call: MethodCall): Map<String, Any> {
+        val bytes = call.argument<ByteArray>("bytes")
+            ?: throw IllegalArgumentException("bytes required")
+        val turns = ((call.argument<Int>("quarterTurns") ?: 0) % 4 + 4) % 4
+        val filterId = call.argument<Int>("filter") ?: 0
+        val quality = call.argument<Int>("quality") ?: 95
+
+        var page = decodeOriented(bytes, MAX_DECODE_EDGE)
+        try {
+            if (turns != 0) {
+                val matrix = Matrix().apply { postRotate(turns * 90f) }
+                val rotated = Bitmap.createBitmap(
+                    page, 0, 0, page.width, page.height, matrix, true
+                )
+                if (rotated !== page) page.recycle()
+                page = rotated
+            }
+            val tone = filterFor(filterId)
+            if (tone != null) {
+                val tinted = Bitmap.createBitmap(
+                    page.width, page.height, Bitmap.Config.ARGB_8888
+                )
+                val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
+                paint.colorFilter = tone
+                Canvas(tinted).drawBitmap(page, 0f, 0f, paint)
+                page.recycle()
+                page = tinted
+            }
+            return mapOf(
+                "bytes" to encode(page, quality),
+                "width" to page.width,
+                "height" to page.height
+            )
+        } finally {
+            page.recycle()
         }
     }
 

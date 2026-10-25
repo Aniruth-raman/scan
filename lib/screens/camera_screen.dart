@@ -276,19 +276,30 @@ class _CameraScreenState extends State<CameraScreen> {
     await _pauseStream();
     if (!mounted) return;
     final pages = List<Uint8List>.unmodifiable(_pages);
-    final message = await Navigator.push<String>(
+    final result = await Navigator.push<ReviewResult>(
       context,
       MaterialPageRoute(
         builder: (_) => ReviewScreen(pages: pages, exporter: widget.exporter),
       ),
     );
     if (!mounted) return;
-    if (message != null) {
-      // The session was exported; hand the message back to My Scans.
-      Navigator.pop(context, message);
+    if (result == null) {
+      await _resumeStream();
       return;
     }
-    await _resumeStream();
+    if (result.addMore) {
+      // "Add" hands the edited pages back, so the filmstrip keeps them while
+      // the session keeps shooting.
+      setState(() {
+        _pages
+          ..clear()
+          ..addAll(result.pages);
+      });
+      await _resumeStream();
+      return;
+    }
+    // The session was exported; hand the message back to My Scans.
+    Navigator.pop(context, result.message);
   }
 
   IconData get _flashIcon => switch (_flash) {

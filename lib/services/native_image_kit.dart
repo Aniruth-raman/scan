@@ -183,6 +183,28 @@ abstract final class NativeImageKit {
     );
   }
 
+  /// Bakes the review stage's edits into a page: a quarter-turn rotation and a
+  /// tone preset, decoded and encoded once.
+  ///
+  /// Rotations and tones are held as state while editing, so this runs once per
+  /// page at save time instead of re-encoding on every tap.
+  static Future<Uint8List> transform(
+    Uint8List bytes, {
+    int quarterTurns = 0,
+    ScanFilter filter = ScanFilter.none,
+    int quality = 95,
+  }) async {
+    _requireAndroid();
+    final result = await _channel.invokeMapMethod<String, dynamic>('transform', {
+      'bytes': bytes,
+      'quarterTurns': quarterTurns,
+      'filter': filter.id,
+      'quality': quality,
+    });
+    if (result == null) throw StateError('transform returned no result');
+    return result['bytes'] as Uint8List;
+  }
+
   /// Decodes at a reduced sample size, so a 12 MP page never reaches the heap.
   static Future<Uint8List> thumbnail(
     Uint8List bytes, {

@@ -46,6 +46,30 @@ abstract final class LensColor {
   static const black30 = Color(0x4D000000);
   static const white70 = Color(0xB4FFFFFF);
 
+  // ------------------------------------------------------- editor stage --
+  /// `lenshvc_k2_feature_tray_background` — the post-capture tray is a far
+  /// darker plate than the capture tray (`#CC171717` vs `#80404040`).
+  static const editorTrayFill = Color(0xCC171717);
+
+  /// `lenshvc_postcapture_close_text` — "Options" and the action labels.
+  static const editorText = Color(0xFFD6D6D6);
+
+  /// Measured tint of an enabled action icon on black.
+  static const editorIcon = Color(0xFFADADAD);
+
+  /// Measured tint of a disabled action icon/label.
+  static const editorDisabled = Color(0xFF5C5C5C);
+
+  // ----------------------------------------------------------- sheets --
+  /// Measured section band inside the options sheet.
+  static const sheetBand = Color(0xFFF2F2F2);
+
+  /// Measured section-header text on that band.
+  static const sheetHeader = Color(0xFF4A4A4A);
+
+  /// `lensPackaging_Handle_color`.
+  static const sheetHandle = Color(0xFF919191);
+
   static const disabled = Color(0xFF919191);
   static const danger = Color(0xFFB00020);
 
@@ -97,6 +121,12 @@ abstract final class LensSize {
   /// Measured editor action row: 163 px = 58 dp.
   static const actionRow = 58.0;
 
+  /// `bottom_bar_padding` — the editor's bottom navigation bar.
+  static const editorNavPadding = 12.0;
+
+  /// Measured editor feature tray: 48 x 193 dp (four 48 dp items).
+  static const editorTrayWidth = 48.0;
+
   /// Measured crop filmstrip band: 270 px = 96 dp.
   static const filmstrip = 96.0;
 
@@ -132,6 +162,9 @@ abstract final class LensType {
 
   /// Hero/pill labels, tabs, tray labels.
   static const body = 14.0;
+
+  /// Sheet row label, e.g. "Gallery" / "Image" in the options sheet.
+  static const row = 16.0;
 
   /// Card footers, mode carousel.
   static const label = 12.0;
