@@ -51,6 +51,71 @@ enum ScanFilter {
   final String label;
 }
 
+/// The 4x5 colour matrix [LensImageKit] bakes for [filter], so the crop stage
+/// can preview the exact tone that will be written into the page.
+///
+/// Mirrors `filterFor()` in `LensImageKit.kt`, including Android's
+/// `ColorMatrix.postConcat` order: values are row-major, the fifth column is a
+/// 0-255 translation, and `enhance` is the contrast matrix applied *after* the
+/// saturation lift.
+List<double> colorMatrixFor(ScanFilter filter) {
+  switch (filter) {
+    case ScanFilter.none:
+      return const <double>[
+        1, 0, 0, 0, 0, //
+        0, 1, 0, 0, 0, //
+        0, 0, 1, 0, 0, //
+        0, 0, 0, 1, 0, //
+      ];
+    case ScanFilter.enhance:
+      return _concat(_contrast(1.12, -15), _saturation(1.18));
+    case ScanFilter.grayscale:
+      return _saturation(0);
+    case ScanFilter.blackAndWhite:
+      return _concat(_contrast(1.7, -89.6), _saturation(0));
+  }
+}
+
+/// `ColorMatrix.setSaturation`: luminance weights from Rec. 709.
+List<double> _saturation(double saturation) {
+  const lumR = 0.213;
+  const lumG = 0.715;
+  const lumB = 0.072;
+  final inverse = 1 - saturation;
+  final r = lumR * inverse;
+  final g = lumG * inverse;
+  final b = lumB * inverse;
+  return <double>[
+    r + saturation, g, b, 0, 0, //
+    r, g + saturation, b, 0, 0, //
+    r, g, b + saturation, 0, 0, //
+    0, 0, 0, 1, 0, //
+  ];
+}
+
+List<double> _contrast(double scale, double translate) => <double>[
+      scale, 0, 0, 0, translate, //
+      0, scale, 0, 0, translate, //
+      0, 0, scale, 0, translate, //
+      0, 0, 0, 1, 0, //
+    ];
+
+/// `outer * inner` for 4x5 affine colour matrices.
+List<double> _concat(List<double> outer, List<double> inner) {
+  final out = List<double>.filled(20, 0);
+  for (var row = 0; row < 4; row++) {
+    for (var col = 0; col < 5; col++) {
+      var sum = 0.0;
+      for (var k = 0; k < 4; k++) {
+        sum += outer[row * 5 + k] * inner[k * 5 + col];
+      }
+      if (col == 4) sum += outer[row * 5 + 4];
+      out[row * 5 + col] = sum;
+    }
+  }
+  return out;
+}
+
 /// Thin bridge to [LensImageKit] on the Android side.
 ///
 /// Decoding, EXIF orientation, perspective rectification, tone mapping, JPEG

@@ -221,11 +221,12 @@ class _CameraScreenState extends State<CameraScreen> {
       if (!mounted) return;
       await HapticFeedback.mediumImpact();
       if (!mounted) return;
-      final cropped = await Navigator.push<Uint8List>(
+      final cropped = await Navigator.push<AdjustResult>(
         context,
         MaterialPageRoute(
           builder: (_) => AdjustScreen(
             originalJpeg: bytes,
+            pages: List<Uint8List>.unmodifiable(_pages),
             filter: _mode.filter,
           ),
         ),
@@ -233,8 +234,20 @@ class _CameraScreenState extends State<CameraScreen> {
       if (!mounted) return;
       setState(() {
         _capturing = false;
-        if (cropped != null) _pages.add(cropped);
+        if (cropped != null) _pages.add(cropped.jpeg);
       });
+      if (cropped?.addAnother ?? false) {
+        // "Add page" on the crop stage: keep the session going and shoot the
+        // next page straight away instead of dropping back to the chrome.
+        await _capture();
+        return;
+      }
+      if (cropped != null) {
+        // "Review and Edit" commits the page and lands on the review stage,
+        // the way the original chains crop into review.
+        await _review();
+        return;
+      }
       await _resumeStream();
     } on CameraException catch (exception) {
       if (!mounted) return;
