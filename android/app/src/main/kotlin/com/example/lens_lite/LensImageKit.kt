@@ -10,12 +10,10 @@ import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
 import android.graphics.Paint
-import android.graphics.RectF
 import android.media.ExifInterface
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
-import android.graphics.pdf.PdfDocument
 import androidx.core.content.FileProvider
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -38,7 +36,7 @@ import kotlin.math.sqrt
  *  - perspective rectification  -> Matrix.setPolyToPoly + Canvas.drawBitmap
  *  - tone presets               -> ColorMatrixColorFilter
  *  - encode                     -> Bitmap.compress (one generation, no Dart round trip)
- *  - multi-page PDF             -> android.graphics.pdf.PdfDocument
+ *  - multi-page PDF             -> JPEG DCTDecode XObjects, hand-written xref
  *  - thumbnails                 -> BitmapFactory inSampleSize (never decodes full size)
  *
  * All methods run on a single background executor so the platform thread stays
@@ -247,8 +245,13 @@ class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandl
     // ------------------------------------------------------------- writePdf --
 
     /**
-     * Full-bleed multi-page PDF sized to each page's own aspect ratio, written
-     * natively. No white margins, no re-layout, no extra Dart dependency.
+     * Full-bleed multi-page PDF sized to each page's own aspect ratio.
+     *
+     * The pages arrive as finished JPEGs, so they are embedded as `DCTDecode`
+     * image XObjects rather than decoded and re-compressed: the PDF costs
+     * exactly what the JPEG costs (about 1.4 MB per 12.5 MP page) and loses no
+     * further generation. `android.graphics.pdf.PdfDocument` would Flate the
+     * raw bitmaps instead — 6 MB per page for the same picture.
      */
     private fun writePdf(call: MethodCall): Map<String, Any> {
         val pages = call.argument<List<ByteArray>>("pages")
@@ -257,43 +260,121 @@ class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandl
             ?: throw IllegalArgumentException("path required")
         if (pages.isEmpty()) throw IllegalArgumentException("pages must not be empty")
 
-        val document = PdfDocument()
-        try {
-            pages.forEachIndexed { index, pageBytes ->
-                val bitmap = decodeOriented(pageBytes, MAX_DECODE_EDGE)
-                try {
-                    val widthPt = A4_WIDTH_PT
-                    val heightPt = (A4_WIDTH_PT * bitmap.height.toFloat() / bitmap.width)
-                        .roundToInt()
-                        .coerceAtLeast(64)
+        val images = pages.map { jpegInfo(it) }
+        val out = ByteArrayOutputStream(pages.sumOf { it.size } + 8192)
+        val offsets = LongArray(pages.size * 3 + 3)
+        var objectId = 3
 
-                    val info = PdfDocument.PageInfo.Builder(
-                        widthPt,
-                        heightPt,
-                        index + 1
-                    ).create()
-                    val page = document.startPage(info)
-                    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-                    paint.isFilterBitmap = true
-                    page.canvas.drawBitmap(
-                        bitmap,
-                        null,
-                        RectF(0f, 0f, widthPt.toFloat(), heightPt.toFloat()),
-                        paint
-                    )
-                    document.finishPage(page)
-                } finally {
-                    bitmap.recycle()
-                }
-            }
+        fun write(text: String) = out.write(text.toByteArray(Charsets.ISO_8859_1))
 
-            val file = File(path)
-            file.parentFile?.mkdirs()
-            file.outputStream().use { document.writeTo(it) }
-            return mapOf("path" to path, "bytes" to file.length(), "pages" to pages.size)
-        } finally {
-            document.close()
+        // Header. The comment line marks the file as binary for transport tools.
+        write("%PDF-1.4\n")
+        out.write(byteArrayOf(0x25, 0xE2.toByte(), 0xE3.toByte(), 0xCF.toByte(), 0xD3.toByte(), 0x0A))
+
+        // 1: catalog.
+        offsets[1] = out.size().toLong()
+        write("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+
+        // 2: page tree.
+        val kids = (0 until pages.size).joinToString(" ") { "${3 + it * 3} 0 R" }
+        offsets[2] = out.size().toLong()
+        write("2 0 obj\n<< /Type /Pages /Kids [ $kids ] /Count ${pages.size} >>\nendobj\n")
+
+        pages.forEachIndexed { index, jpeg ->
+            val pageId = 3 + index * 3
+            val contentId = pageId + 1
+            val imageId = pageId + 2
+            val image = images[index]
+
+            val widthPt = A4_WIDTH_PT
+            val heightPt = (A4_WIDTH_PT * image.height.toFloat() / image.width)
+                .roundToInt()
+                .coerceAtLeast(64)
+
+            offsets[pageId] = out.size().toLong()
+            write(
+                "$pageId 0 obj\n<< /Type /Page /Parent 2 0 R " +
+                    "/MediaBox [0 0 $widthPt $heightPt] " +
+                    "/Resources << /XObject << /Im0 $imageId 0 R >> >> " +
+                    "/Contents $contentId 0 R >>\nendobj\n"
+            )
+
+            // The unit square of the image space is mapped onto the whole page.
+            val content = "q $widthPt 0 0 $heightPt 0 0 cm /Im0 Do Q\n"
+            offsets[contentId] = out.size().toLong()
+            write(
+                "$contentId 0 obj\n<< /Length ${content.length} >>\nstream\n" +
+                    content + "endstream\nendobj\n"
+            )
+
+            val colorSpace =
+                if (image.components == 1) "/DeviceGray" else "/DeviceRGB"
+            offsets[imageId] = out.size().toLong()
+            write(
+                "$imageId 0 obj\n<< /Type /XObject /Subtype /Image " +
+                    "/Width ${image.width} /Height ${image.height} " +
+                    "/ColorSpace $colorSpace /BitsPerComponent 8 " +
+                    "/Filter /DCTDecode /Length ${jpeg.size} >>\nstream\n"
+            )
+            out.write(jpeg)
+            write("\nendstream\nendobj\n")
+            objectId = imageId + 1
         }
+
+        // Cross-reference table. Every entry is exactly 20 bytes.
+        val xrefOffset = out.size()
+        write("xref\n0 $objectId\n0000000000 65535 f \n")
+        for (id in 1 until objectId) {
+            write(String.format(java.util.Locale.US, "%010d 00000 n \n", offsets[id]))
+        }
+        write(
+            "trailer\n<< /Size $objectId /Root 1 0 R >>\n" +
+                "startxref\n$xrefOffset\n%%EOF\n"
+        )
+
+        val file = File(path)
+        file.parentFile?.mkdirs()
+        file.writeBytes(out.toByteArray())
+        return mapOf("path" to path, "bytes" to file.length(), "pages" to pages.size)
+    }
+
+    private class JpegInfo(val width: Int, val height: Int, val components: Int)
+
+    /**
+     * Reads the SOF marker instead of decoding: the pixels are never needed,
+     * only the frame size and whether the JPEG carries one or three channels.
+     */
+    private fun jpegInfo(bytes: ByteArray): JpegInfo {
+        require(bytes.size > 16 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte()) {
+            "page is not a JPEG"
+        }
+        var index = 2
+        while (index + 9 < bytes.size) {
+            if (bytes[index] != 0xFF.toByte()) {
+                index++
+                continue
+            }
+            val marker = bytes[index + 1].toInt() and 0xFF
+            // Standalone markers carry no length field.
+            if (marker == 0xD8 || marker == 0x01 || marker in 0xD0..0xD7) {
+                index += 2
+                continue
+            }
+            val length = ((bytes[index + 2].toInt() and 0xFF) shl 8) or
+                (bytes[index + 3].toInt() and 0xFF)
+            // SOF0..SOF15, excluding DHT (C4), JPG (C8) and DAC (CC).
+            if (marker in 0xC0..0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC) {
+                val height = ((bytes[index + 5].toInt() and 0xFF) shl 8) or
+                    (bytes[index + 6].toInt() and 0xFF)
+                val width = ((bytes[index + 7].toInt() and 0xFF) shl 8) or
+                    (bytes[index + 8].toInt() and 0xFF)
+                val components = bytes[index + 9].toInt() and 0xFF
+                require(width > 0 && height > 0) { "JPEG has an empty frame" }
+                return JpegInfo(width, height, components)
+            }
+            index += 2 + length
+        }
+        throw IllegalArgumentException("JPEG has no SOF marker")
     }
 
     // -------------------------------------------------------------- helpers --
