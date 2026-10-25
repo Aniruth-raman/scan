@@ -4,22 +4,41 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../design/lens_tokens.dart';
 import '../services/edge_detection_worker.dart';
 import '../services/edge_detector.dart';
+import '../services/native_image_kit.dart';
+import '../services/scan_exporter.dart';
 import 'adjust_screen.dart';
+import 'review_screen.dart';
 
-/// Live capture screen with real-time document edge detection.
+/// Capture stage: black chrome, live edge detection, and a session filmstrip.
 ///
-/// A luminance stream is analyzed in an isolate; while a document outline is
-/// visible the preview is dimmed outside it and a "Document detected" chip
-/// appears, mirroring the original's scanning affordance. Shutter leads into
-/// the corner-adjust step, which mirrors the original's post-capture crop
-/// flow.
+/// Geometry measured from `com.microsoft.office.officelens` on 384 x 832 dp:
+/// 48 dp targets 12 dp in from the top corners, a vertical two-slot tray at the
+/// right, a 68 dp shutter ring, a 46 dp mode carousel and an 82 dp filmstrip
+/// sitting 24 dp above the ring.
 class CameraScreen extends StatefulWidget {
-  const CameraScreen({super.key});
+  const CameraScreen({super.key, required this.exporter});
+
+  /// Owns storage and history; the session hands pages straight to review.
+  final ScanExporter exporter;
 
   @override
   State<CameraScreen> createState() => _CameraScreenState();
+}
+
+/// Capture modes. Each maps onto a tone preset rather than a fake label.
+enum _CaptureMode {
+  scan('SCAN', 'Scan', ScanFilter.none),
+  whiteboard('WHITEBOARD', 'Whiteboard', ScanFilter.blackAndWhite),
+  businessCard('BUSINESS CARD', 'Business card', ScanFilter.enhance);
+
+  const _CaptureMode(this.label, this.semanticLabel, this.filter);
+
+  final String label;
+  final String semanticLabel;
+  final ScanFilter filter;
 }
 
 class _CameraScreenState extends State<CameraScreen> {
@@ -29,12 +48,17 @@ class _CameraScreenState extends State<CameraScreen> {
   bool _useFront = false;
   FlashMode _flash = FlashMode.off;
   String? _error;
+  _CaptureMode _mode = _CaptureMode.scan;
 
   final EdgeDetectionWorker _detector = EdgeDetectionWorker();
   DocumentQuad? _quad;
   bool _analyzing = false;
   bool _wasDetecting = false;
   bool _streaming = false;
+  Size _frameDisplaySize = Size.zero;
+
+  /// Pages captured in this session, already cropped.
+  final List<Uint8List> _pages = <Uint8List>[];
 
   bool get _detectEnabled => !_useFront;
 
@@ -58,8 +82,8 @@ class _CameraScreenState extends State<CameraScreen> {
 
   Future<void> _start() async {
     try {
-      final cameras = await availableCameras()
-          .timeout(const Duration(seconds: 15));
+      final cameras =
+          await availableCameras().timeout(const Duration(seconds: 15));
       if (cameras.isEmpty) {
         if (!mounted) return;
         setState(() {
@@ -76,8 +100,8 @@ class _CameraScreenState extends State<CameraScreen> {
       );
       final controller = CameraController(
         description,
-        // Documents need pixels: `high` is 720p, which throws away most of the
-        // sensor. Lens captures at full sensor resolution and so do we.
+        // Documents need pixels: `high` is 720p, which throws most of the
+        // sensor away. Capture at the largest size the device offers.
         ResolutionPreset.max,
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.jpeg,
@@ -123,7 +147,7 @@ class _CameraScreenState extends State<CameraScreen> {
     try {
       await _controller?.stopImageStream();
     } on CameraException {
-      // Already stopped or unsupported; nothing to do.
+      // Already stopped or unsupported.
     }
   }
 
@@ -132,14 +156,12 @@ class _CameraScreenState extends State<CameraScreen> {
     final yPlane = image.planes.first;
     if (yPlane.bytes.isEmpty) return;
     _analyzing = true;
-    final frameWidth = image.width;
-    final frameHeight = image.height;
     try {
       final rotation = _controller?.description.sensorOrientation ?? 90;
       final quad = await _detector.detect(
         luminance: Uint8List.fromList(yPlane.bytes),
-        width: frameWidth,
-        height: frameHeight,
+        width: image.width,
+        height: image.height,
         bytesPerRow: yPlane.bytesPerRow,
         rotationDegrees: rotation,
       );
@@ -148,8 +170,8 @@ class _CameraScreenState extends State<CameraScreen> {
       setState(() {
         _quad = quad;
         _frameDisplaySize = Size(
-          (rotated ? frameHeight : frameWidth).toDouble(),
-          (rotated ? frameWidth : frameHeight).toDouble(),
+          (rotated ? image.height : image.width).toDouble(),
+          (rotated ? image.width : image.height).toDouble(),
         );
       });
       if (quad != null && !_wasDetecting) {
@@ -160,8 +182,6 @@ class _CameraScreenState extends State<CameraScreen> {
       _analyzing = false;
     }
   }
-
-  Size _frameDisplaySize = Size.zero;
 
   Future<void> _switchCamera() async {
     if (_initializing) return;
@@ -201,22 +221,21 @@ class _CameraScreenState extends State<CameraScreen> {
       if (!mounted) return;
       await HapticFeedback.mediumImpact();
       if (!mounted) return;
-      final adjusted = await Navigator.push<Uint8List>(
+      final cropped = await Navigator.push<Uint8List>(
         context,
         MaterialPageRoute(
-          builder: (_) => AdjustScreen(originalJpeg: bytes),
-          fullscreenDialog: false,
+          builder: (_) => AdjustScreen(
+            originalJpeg: bytes,
+            filter: _mode.filter,
+          ),
         ),
       );
       if (!mounted) return;
-      if (adjusted == null) {
-        // User cancelled the crop step; resume the live camera.
-        setState(() => _capturing = false);
-        await _resumeStream();
-        return;
-      }
-      if (!mounted) return;
-      Navigator.pop(context, adjusted);
+      setState(() {
+        _capturing = false;
+        if (cropped != null) _pages.add(cropped);
+      });
+      await _resumeStream();
     } on CameraException catch (exception) {
       if (!mounted) return;
       setState(() => _capturing = false);
@@ -232,204 +251,37 @@ class _CameraScreenState extends State<CameraScreen> {
     }
   }
 
+  Future<void> _close() async {
+    await _pauseStream();
+    if (!mounted) return;
+    Navigator.pop(context);
+  }
+
+  Future<void> _review() async {
+    if (_pages.isEmpty) return;
+    await _pauseStream();
+    if (!mounted) return;
+    final pages = List<Uint8List>.unmodifiable(_pages);
+    final message = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ReviewScreen(pages: pages, exporter: widget.exporter),
+      ),
+    );
+    if (!mounted) return;
+    if (message != null) {
+      // The session was exported; hand the message back to My Scans.
+      Navigator.pop(context, message);
+      return;
+    }
+    await _resumeStream();
+  }
+
   IconData get _flashIcon => switch (_flash) {
         FlashMode.auto => Icons.flash_auto,
         FlashMode.always => Icons.flash_on,
         _ => Icons.flash_off,
       };
-
-  Widget _buildBody() {
-    final error = _error;
-    if (error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.no_photography, color: Colors.white54, size: 48),
-              const SizedBox(height: 12),
-              const Text(
-                'Camera Service error',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Close other camera apps and try again. If the problem '
-                'persists, restart your device.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white70),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                error,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white38, fontSize: 12),
-              ),
-              const SizedBox(height: 16),
-              FilledButton.tonalIcon(
-                onPressed: () {
-                  setState(() {
-                    _error = null;
-                    _initializing = true;
-                  });
-                  _start();
-                },
-                icon: const Icon(Icons.refresh),
-                label: const Text('Try again'),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-    final controller = _controller;
-    if (_initializing || controller == null || !controller.value.isInitialized) {
-      return const Center(
-        child: CircularProgressIndicator(color: Colors.white),
-      );
-    }
-    final aspect = _frameDisplaySize == Size.zero
-        ? controller.value.aspectRatio
-        : _frameDisplaySize.aspectRatio;
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Center(
-          child: AspectRatio(
-            aspectRatio: aspect,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                CameraPreview(controller),
-                AnimatedOpacity(
-                  duration: const Duration(milliseconds: 250),
-                  opacity: _quad == null ? 0 : 1,
-                  child: IgnorePointer(
-                    child: CustomPaint(
-                      painter: _QuadOverlayPainter(
-                        quad: _quad,
-                        displaySize: _frameDisplaySize,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        // Detection chip.
-        Positioned(
-          top: 12,
-          left: 0,
-          right: 0,
-          child: Center(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
-              transitionBuilder: (child, animation) => FadeTransition(
-                opacity: animation,
-                child: ScaleTransition(scale: animation, child: child),
-              ),
-              child: _quad == null
-                  ? Container(
-                      key: const ValueKey('searching-chip'),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.4),
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.center_focus_weak,
-                              color: Colors.white70, size: 18),
-                          SizedBox(width: 8),
-                          Text(
-                            'Looking for a document',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontWeight: FontWeight.w500,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  : Container(
-                      key: const ValueKey('detected-chip'),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.55),
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.document_scanner,
-                              color: Colors.white, size: 18),
-                          SizedBox(width: 8),
-                          Text(
-                            'Document detected',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-            ),
-          ),
-        ),
-        Positioned(
-          top: 8,
-          left: 8,
-          child: IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.close, color: Colors.white, size: 30),
-            tooltip: 'Cancel',
-          ),
-        ),
-        Positioned(
-          bottom: 24,
-          left: 0,
-          right: 0,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              IconButton(
-                onPressed: _cycleFlash,
-                icon: Icon(_flashIcon, color: Colors.white, size: 30),
-                tooltip: 'Flash mode',
-              ),
-              _ShutterButton(onPressed: _capture, busy: _capturing),
-              IconButton(
-                onPressed: _switchCamera,
-                icon: const Icon(
-                  Icons.cameraswitch,
-                  color: Colors.white,
-                  size: 30,
-                ),
-                tooltip: 'Switch camera',
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
 
   @override
   void dispose() {
@@ -440,106 +292,544 @@ class _CameraScreenState extends State<CameraScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(child: _buildBody()),
+    final padding = MediaQuery.paddingOf(context);
+    final topInset = padding.top;
+    final bottomInset = padding.bottom;
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light.copyWith(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarIconBrightness: Brightness.light,
+      ),
+      child: Scaffold(
+        backgroundColor: LensColor.stageBlack,
+        // Lens does not bleed the preview under the system bars. The status bar
+        // is a solid black band, the preview stops at the filmstrip, and the
+        // shutter/carousel band below it is black as well.
+        body: Column(
+          children: [
+            SizedBox(height: topInset),
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  _buildStage(),
+                  _buildTopChrome(),
+                ],
+              ),
+            ),
+            _buildBottomChrome(bottomInset),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStage() {
+    final error = _error;
+    if (error != null) return _buildError(error);
+
+    final controller = _controller;
+    if (_initializing ||
+        controller == null ||
+        !controller.value.isInitialized) {
+      return const Center(
+        child: SizedBox(
+          width: 28,
+          height: 28,
+          child: CircularProgressIndicator(
+            strokeWidth: 2.5,
+            color: LensColor.gray0,
+          ),
+        ),
+      );
+    }
+
+    final preview = controller.value.previewSize;
+    final portrait = MediaQuery.orientationOf(context) == Orientation.portrait;
+    final w = preview == null
+        ? 1.0
+        : (portrait ? preview.height : preview.width).toDouble();
+    final h = preview == null
+        ? 1.0
+        : (portrait ? preview.width : preview.height).toDouble();
+
+    return ClipRect(
+      child: FittedBox(
+        fit: BoxFit.cover,
+        child: SizedBox(
+          width: w,
+          height: h,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              CameraPreview(controller),
+              IgnorePointer(
+                child: AnimatedOpacity(
+                  duration: LensMotion.base,
+                  curve: LensMotion.curve,
+                  opacity: _quad == null ? 0 : 1,
+                  child: CustomPaint(
+                    painter: _QuadOutlinePainter(
+                      quad: _quad,
+                      frameSize: _frameDisplaySize,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildError(String error) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(LensSpace.lg),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.no_photography_outlined,
+              color: LensColor.white70,
+              size: 48,
+            ),
+            const SizedBox(height: LensSpace.sm),
+            const Text(
+              'Camera unavailable',
+              style: TextStyle(
+                color: LensColor.gray0,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: LensSpace.xs),
+            Text(
+              error,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: LensColor.gray6, fontSize: 12),
+            ),
+            const SizedBox(height: LensSpace.md),
+            FilledButton.tonal(
+              onPressed: () {
+                setState(() {
+                  _error = null;
+                  _initializing = true;
+                });
+                _start();
+              },
+              child: const Text('Try again'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Chevron and feature tray float over the top of the preview. Measured:
+  /// dismiss target at 19.6 dp from the left and 15.8 dp below the status bar;
+  /// tray at 11.7 dp from the right and 11.7 dp below the status bar.
+  Widget _buildTopChrome() {
+    return Stack(
+      children: [
+        Positioned(
+          left: LensSpace.md + LensSpace.xxs,
+          top: LensSpace.md,
+          child: _BarGlyph(
+            icon: Icons.chevron_left,
+            label: 'Back to My Scans',
+            size: 32,
+            onTap: _close,
+          ),
+        ),
+        Positioned(
+          right: LensSpace.sm,
+          top: LensSpace.sm,
+          child: _ToolTray(
+            flashIcon: _flashIcon,
+            flashLabel: switch (_flash) {
+              FlashMode.auto => 'Flash auto',
+              FlashMode.always => 'Flash on',
+              _ => 'Flash off',
+            },
+            onFlash: _cycleFlash,
+            onMore: _showMore,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Black band under the preview: session filmstrip, shutter, mode carousel.
+  ///
+  /// The filmstrip only exists once a page is captured, so the preview grows
+  /// into the space and the band animates in on the first shot.
+  Widget _buildBottomChrome(double bottomInset) {
+    return AnimatedSize(
+      duration: LensMotion.base,
+      curve: LensMotion.curve,
+      alignment: Alignment.topCenter,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_pages.isNotEmpty) _Filmstrip(pages: _pages, onTap: _review),
+          const SizedBox(height: LensSpace.lg),
+          _CaptureRing(busy: _capturing, onTap: _capture),
+          _ModeCarousel(
+            selected: _mode,
+            onSelected: (mode) => setState(() => _mode = mode),
+          ),
+          SizedBox(height: bottomInset),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showMore() async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: LensColor.gray10,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _SheetAction(
+              icon: Icons.cameraswitch_outlined,
+              label: 'Switch camera',
+              onTap: () => Navigator.pop(sheetContext, 'switch'),
+            ),
+            _SheetAction(
+              icon: _pages.isEmpty
+                  ? Icons.document_scanner_outlined
+                  : Icons.edit_note,
+              label: _pages.isEmpty ? 'Multi-page scanning' : 'Review pages',
+              onTap: () => Navigator.pop(sheetContext, 'review'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || action == null) return;
+    switch (action) {
+      case 'switch':
+        await _switchCamera();
+      case 'review':
+        await _review();
+    }
+  }
+}
+
+/// The 68 dp shutter: a 6 dp white ring with a clear centre.
+class _CaptureRing extends StatefulWidget {
+  const _CaptureRing({required this.busy, required this.onTap});
+
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  State<_CaptureRing> createState() => _CaptureRingState();
+}
+
+class _CaptureRingState extends State<_CaptureRing> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Capture',
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapCancel: () => setState(() => _pressed = false),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTap: widget.busy ? null : widget.onTap,
+        child: AnimatedScale(
+          scale: _pressed ? 0.94 : 1,
+          duration: LensMotion.fast,
+          curve: LensMotion.curve,
+          child: SizedBox(
+            width: LensSize.captureRing,
+            height: LensSize.captureRing,
+            child: widget.busy
+                ? const Padding(
+                    padding: EdgeInsets.all(18),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: LensColor.gray0,
+                    ),
+                  )
+                : DecoratedBox(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: LensColor.gray0,
+                        width: LensSize.captureStroke,
+                      ),
+                    ),
+                  ),
+          ),
+        ),
+      ),
     );
   }
 }
 
-class _QuadOverlayPainter extends CustomPainter {
-  _QuadOverlayPainter({required this.quad, required this.displaySize});
+/// Vertical two-slot tray at the top right.
+class _ToolTray extends StatelessWidget {
+  const _ToolTray({
+    required this.flashIcon,
+    required this.flashLabel,
+    required this.onFlash,
+    required this.onMore,
+  });
+
+  final IconData flashIcon;
+  final String flashLabel;
+  final VoidCallback onFlash;
+  final VoidCallback onMore;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: LensColor.trayFill,
+        borderRadius: BorderRadius.circular(LensRadius.tray),
+        border: Border.all(color: LensColor.trayStroke),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _BarGlyph(
+            icon: flashIcon,
+            label: flashLabel,
+            onTap: onFlash,
+            size: LensSize.icon,
+          ),
+          _BarGlyph(
+            icon: Icons.more_vert,
+            label: 'More options',
+            onTap: onMore,
+            size: LensSize.icon,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BarGlyph extends StatelessWidget {
+  const _BarGlyph({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.size = LensSize.icon,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: label,
+      child: SizedBox(
+        width: LensSize.touch,
+        height: LensSize.touch,
+        child: InkResponse(
+          onTap: onTap,
+          radius: 24,
+          child: Icon(icon, size: size, color: LensColor.gray0),
+        ),
+      ),
+    );
+  }
+}
+
+/// Uppercase, tracked mode carousel — the signature Lens type cue.
+class _ModeCarousel extends StatelessWidget {
+  const _ModeCarousel({required this.selected, required this.onSelected});
+
+  final _CaptureMode selected;
+  final ValueChanged<_CaptureMode> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 46,
+      child: Center(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          // `lenshvc_carousel_view_margin` keeps the first and last label clear
+          // of the import button and the camera switcher.
+          padding: const EdgeInsets.symmetric(horizontal: 48),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < _CaptureMode.values.length; i++) ...[
+                if (i > 0) const SizedBox(width: LensSpace.xxs),
+                _CarouselLabel(
+                  mode: _CaptureMode.values[i],
+                  selected: _CaptureMode.values[i] == selected,
+                  onTap: () => onSelected(_CaptureMode.values[i]),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One carousel label: 8 dp side padding with a 4 dp gap between items, which
+/// is what the measured item boxes add up to.
+class _CarouselLabel extends StatelessWidget {
+  const _CarouselLabel({
+    required this.mode,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final _CaptureMode mode;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '${mode.semanticLabel} mode',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: LensSpace.xs),
+          child: Center(
+            child: Text(
+              mode.label,
+              style: TextStyle(
+                fontSize: LensType.label,
+                letterSpacing: LensType.carouselTracking,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                color: selected ? LensColor.gray0 : LensColor.gray6,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Captured pages for this session.
+///
+/// Measured mini-gallery strip: 86 x 82 dp tiles butted together, full bleed,
+/// 82 dp band directly above the shutter gap.
+class _Filmstrip extends StatelessWidget {
+  const _Filmstrip({required this.pages, required this.onTap});
+
+  final List<Uint8List> pages;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 82,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: EdgeInsets.zero,
+        itemCount: pages.length,
+        itemBuilder: (context, index) {
+          return Semantics(
+            button: true,
+            label: 'Page ${index + 1} of ${pages.length}. Review pages.',
+            child: GestureDetector(
+              onTap: onTap,
+              child: SizedBox(
+                width: 86,
+                height: 82,
+                child: Image.memory(
+                  pages[index],
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _SheetAction extends StatelessWidget {
+  const _SheetAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon, color: LensColor.gray0),
+      title: Text(label, style: const TextStyle(color: LensColor.gray0)),
+      onTap: onTap,
+    );
+  }
+}
+
+/// Orange document outline, drawn in the same space as the detector's frame.
+class _QuadOutlinePainter extends CustomPainter {
+  _QuadOutlinePainter({required this.quad, required this.frameSize});
 
   final DocumentQuad? quad;
-  final Size displaySize;
+  final Size frameSize;
 
   @override
   void paint(Canvas canvas, Size size) {
     final documentQuad = quad;
-    if (documentQuad == null || displaySize == Size.zero) return;
+    if (documentQuad == null || frameSize == Size.zero) return;
 
-    final sx = size.width / displaySize.width;
-    final sy = size.height / displaySize.height;
-    Offset offset(math.Point<double> point) =>
-        Offset(point.x * sx, point.y * sy);
+    // Map the analysed frame onto the widget with BoxFit.cover.
+    final scale = math.max(
+      size.width / frameSize.width,
+      size.height / frameSize.height,
+    );
+    final dx = (size.width - frameSize.width * scale) / 2;
+    final dy = (size.height - frameSize.height * scale) / 2;
+    Offset map(math.Point<double> point) =>
+        Offset(point.x * scale + dx, point.y * scale + dy);
 
     final path = Path()
-      ..moveTo(offset(documentQuad.topLeft).dx, offset(documentQuad.topLeft).dy)
-      ..lineTo(
-          offset(documentQuad.topRight).dx, offset(documentQuad.topRight).dy)
-      ..lineTo(offset(documentQuad.bottomRight).dx,
-          offset(documentQuad.bottomRight).dy)
-      ..lineTo(offset(documentQuad.bottomLeft).dx,
-          offset(documentQuad.bottomLeft).dy)
+      ..moveTo(map(documentQuad.topLeft).dx, map(documentQuad.topLeft).dy)
+      ..lineTo(map(documentQuad.topRight).dx, map(documentQuad.topRight).dy)
+      ..lineTo(map(documentQuad.bottomRight).dx, map(documentQuad.bottomRight).dy)
+      ..lineTo(map(documentQuad.bottomLeft).dx, map(documentQuad.bottomLeft).dy)
       ..close();
 
-    // Dim everything outside the document.
-    final dim = Path()
-      ..fillType = PathFillType.evenOdd
-      ..addRect(Offset.zero & size)
-      ..addPath(path, Offset.zero);
-    canvas.drawPath(
-      dim,
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.35)
-        ..style = PaintingStyle.fill,
-    );
-
-    // Glow + crisp outline.
     canvas.drawPath(
       path,
       Paint()
-        ..color = Colors.white.withValues(alpha: 0.35)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 6
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+        ..strokeWidth = 2
+        ..strokeJoin = StrokeJoin.round
+        ..color = LensColor.accent,
     );
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = Colors.white
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5,
-    );
-
-    // Corner accents.
-    final dotPaint = Paint()..color = Colors.white;
-    for (final corner in documentQuad.corners) {
-      canvas.drawCircle(offset(corner), 5, dotPaint);
-    }
   }
 
   @override
-  bool shouldRepaint(_QuadOverlayPainter oldDelegate) =>
-      oldDelegate.quad != quad || oldDelegate.displaySize != displaySize;
-}
-
-class _ShutterButton extends StatelessWidget {
-  const _ShutterButton({required this.onPressed, required this.busy});
-
-  final VoidCallback onPressed;
-  final bool busy;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: busy ? null : onPressed,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        width: 76,
-        height: 76,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 4),
-          color: busy ? Colors.white24 : Colors.transparent,
-        ),
-        child: busy
-            ? const CircularProgressIndicator(
-                color: Colors.white,
-                strokeWidth: 3,
-              )
-            : const Icon(Icons.camera, color: Colors.white, size: 40),
-      ),
-    );
-  }
+  bool shouldRepaint(_QuadOutlinePainter oldDelegate) =>
+      oldDelegate.quad != quad || oldDelegate.frameSize != frameSize;
 }

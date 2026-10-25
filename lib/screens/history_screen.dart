@@ -13,7 +13,6 @@ import '../models/scan_entry.dart';
 import '../services/native_image_kit.dart';
 import '../services/scan_exporter.dart';
 import 'camera_screen.dart';
-import 'review_screen.dart';
 import 'scan_viewer_screen.dart';
 
 /// "My Scans" — the home list.
@@ -66,16 +65,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
       return;
     }
     if (!mounted) return;
-    final bytes = await Navigator.push<Uint8List>(
-      context,
-      MaterialPageRoute(builder: (_) => const CameraScreen()),
-    );
-    if (bytes == null || !mounted) return;
+    // The capture stage owns the whole session: shoot, crop, add pages, and
+    // hand pages to review. It reports back only when something was saved.
     final message = await Navigator.push<String>(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            ReviewScreen(imageBytes: bytes, exporter: widget.exporter),
+        builder: (_) => CameraScreen(exporter: widget.exporter),
       ),
     );
     if (!mounted) return;

@@ -5,15 +5,23 @@ import 'package:flutter/services.dart';
 
 import '../services/document_image_ops.dart';
 import '../services/edge_detector.dart';
+import '../services/native_image_kit.dart';
 
 /// Post-capture corner adjustment, mirroring the original's flow:
 /// the detected document corners are pre-filled and can be dragged before
 /// the perspective crop is applied. Pops the final JPEG bytes, or the
 /// untouched original via "Use full image".
 class AdjustScreen extends StatefulWidget {
-  const AdjustScreen({super.key, required this.originalJpeg});
+  const AdjustScreen({
+    super.key,
+    required this.originalJpeg,
+    this.filter = ScanFilter.none,
+  });
 
   final Uint8List originalJpeg;
+
+  /// Tone preset chosen by the capture mode; baked in when the page is rendered.
+  final ScanFilter filter;
 
   @override
   State<AdjustScreen> createState() => _AdjustScreenState();
@@ -73,8 +81,8 @@ class _AdjustScreenState extends State<AdjustScreen> {
     if (quad == null || _displayJpeg == null || _applying) return;
 
     final isFullFrame = _isFullFrame(quad);
-    if (isFullFrame) {
-      // Nothing to crop; hand back the original capture.
+    if (isFullFrame && widget.filter == ScanFilter.none) {
+      // Nothing to crop and no tone to bake; hand back the original capture.
       Navigator.pop(context, widget.originalJpeg);
       return;
     }
@@ -98,6 +106,7 @@ class _AdjustScreenState extends State<AdjustScreen> {
         corners,
         fullWidth: _imageWidth,
         fullHeight: _imageHeight,
+        filter: widget.filter,
       );
       if (!mounted) return;
       if (cropped == null) {

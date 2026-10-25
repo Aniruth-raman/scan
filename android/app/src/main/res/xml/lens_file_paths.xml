@@ -1,11 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Scopes the FileProvider used to open saved scans in external viewers.
+
   Scans are written to getApplicationDocumentsDirectory(), which on Android
-  resolves to the app's private files directory (app_flutter).
+  resolves to /data/data/<package>/app_flutter — outside the provider's
+  files-path root. root-path covers that directory; the provider is not
+  exported and every URI is handed out with a one-shot read grant, so the
+  broader root does not widen what other apps can reach.
 -->
 <paths>
     <files-path name="internal_files" path="." />
     <cache-path name="internal_cache" path="." />
     <external-files-path name="external_files" path="." />
+    <root-path name="app_root" path="." />
 </paths>

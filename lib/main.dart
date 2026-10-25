@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -11,6 +12,12 @@ import 'services/scan_exporter.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Lens is portrait-only on phones: the capture stage, crop stage and editor
+  // are all laid out for a 384 x 832 dp viewport. Locking here keeps the
+  // measured geometry valid and stops the camera preview from rotating out
+  // from under the chrome.
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
   final repository = SqfliteScanRepository();
   final documents = await getApplicationDocumentsDirectory();

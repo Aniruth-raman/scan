@@ -23,7 +23,7 @@ void main() {
         storageDirectory: tempDir,
       );
 
-  testWidgets('renders seeded scans in the My Scans list', (tester) async {
+  testWidgets('renders seeded scans as a two-column grid', (tester) async {
     final repository = InMemoryScanRepository(
       seed: [
         ScanEntry(
@@ -51,11 +51,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('My Scans'), findsWidgets); // large + collapsed titles
+    expect(find.text('My Scans'), findsOneWidget);
     expect(find.text('Receipt'), findsOneWidget);
     expect(find.text('Whiteboard'), findsOneWidget);
-    expect(find.textContaining('PDF'), findsWidgets);
-    expect(find.byType(FloatingActionButton), findsOneWidget);
+    // PDFs are flagged with the badge rather than a text label.
+    expect(find.byIcon(Icons.picture_as_pdf), findsOneWidget);
+    // The capture affordance is the 48 dp circle, not a Material FAB.
+    expect(find.byIcon(Icons.photo_camera), findsOneWidget);
+    expect(find.byType(FloatingActionButton), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -74,7 +77,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('No scans yet'), findsOneWidget);
-    expect(find.text('Capture'), findsOneWidget);
+    expect(find.byIcon(Icons.photo_camera), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
-}
+}
