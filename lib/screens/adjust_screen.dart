@@ -70,8 +70,7 @@ class _AdjustScreenState extends State<AdjustScreen> {
 
   Future<void> _apply() async {
     final quad = _quad;
-    final displayJpeg = _displayJpeg;
-    if (quad == null || displayJpeg == null || _applying) return;
+    if (quad == null || _displayJpeg == null || _applying) return;
 
     final isFullFrame = _isFullFrame(quad);
     if (isFullFrame) {
@@ -92,7 +91,14 @@ class _AdjustScreenState extends State<AdjustScreen> {
         quad.bottomLeft.x,
         quad.bottomLeft.y,
       ];
-      final cropped = await cropJpegToCorners(displayJpeg, corners);
+      // Crop from the original capture, not the display preview: corners are in
+      // full-resolution coordinates and the page is rectified at that size.
+      final cropped = await cropJpegToCorners(
+        widget.originalJpeg,
+        corners,
+        fullWidth: _imageWidth,
+        fullHeight: _imageHeight,
+      );
       if (!mounted) return;
       if (cropped == null) {
         setState(() => _applying = false);

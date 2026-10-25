@@ -76,7 +76,9 @@ class _CameraScreenState extends State<CameraScreen> {
       );
       final controller = CameraController(
         description,
-        ResolutionPreset.high,
+        // Documents need pixels: `high` is 720p, which throws away most of the
+        // sensor. Lens captures at full sensor resolution and so do we.
+        ResolutionPreset.max,
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.jpeg,
       );

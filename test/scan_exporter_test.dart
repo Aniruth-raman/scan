@@ -1,6 +1,7 @@
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:lens_lite/data/scan_repository.dart';
@@ -11,30 +12,64 @@ Uint8List fakeJpeg() {
   return Uint8List.fromList(img.encodeJpg(image));
 }
 
+/// PDF assembly and thumbnailing moved to `LensImageKit` on the Android side.
+/// The unit tests stand in for the platform with a channel mock so the
+/// bookkeeping this class actually owns stays covered.
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  const channel = MethodChannel('lens_lite/image');
   late Directory tempDir;
   late InMemoryScanRepository repository;
   late ScanExporter exporter;
+
+  setUpAll(() {
+    // NativeImageKit is Android-only; the guard reads defaultTargetPlatform.
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+  });
+
+  tearDownAll(() {
+    debugDefaultTargetPlatformOverride = null;
+  });
 
   setUp(() {
     tempDir = Directory.systemTemp.createTempSync('lens_lite_export');
     repository = InMemoryScanRepository();
     exporter = ScanExporter(repository: repository, storageDirectory: tempDir);
+
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          switch (call.method) {
+            case 'thumbnail':
+              return <String, dynamic>{
+                'bytes': Uint8List.fromList(<int>[1, 2, 3]),
+                'width': 32,
+                'height': 24,
+              };
+            case 'writePdf':
+              final path = (call.arguments as Map)['path'] as String;
+              final pages = (call.arguments as Map)['pages'] as List;
+              // Emit a minimal but structurally real PDF header.
+              final bytes = <int>[
+                ...'%PDF-1.4\n'.codeUnits,
+                ...'%pages:${pages.length}\n'.codeUnits,
+              ];
+              File(path).writeAsBytesSync(bytes);
+              return <String, dynamic>{
+                'path': path,
+                'bytes': bytes.length,
+                'pages': pages.length,
+              };
+            default:
+              return null;
+          }
+        });
   });
 
-  tearDown(() {
+  tearDown(() async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null);
     if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
-  });
-
-  test('buildPdf produces a real PDF document', () async {
-    final bytes = await ScanExporter.buildPdf(
-      imageBytes: fakeJpeg(),
-      title: 'Test scan',
-      timestamp: DateTime(2026, 10, 24, 10, 30),
-    );
-
-    expect(bytes, isNotEmpty);
-    expect(String.fromCharCodes(bytes.sublist(0, 5)), '%PDF-');
   });
 
   test('saveImage stores the file, a thumbnail and a history row', () async {
@@ -52,7 +87,7 @@ void main() {
     expect(history.first.title, 'My capture');
   });
 
-  test('exportPdf stores a PDF file and a history row', () async {
+  test('exportPdf writes a PDF through the platform and records a row', () async {
     final entry = await exporter.exportPdf(fakeJpeg());
 
     expect(entry.kind, 'pdf');
@@ -65,6 +100,24 @@ void main() {
     final history = await repository.all();
     expect(history, hasLength(1));
     expect(history.first.kind, 'pdf');
+  });
+
+  test('exportPdfPages sends every page to the platform', () async {
+    final pages = <Uint8List>[fakeJpeg(), fakeJpeg(), fakeJpeg()];
+    final entry = await exporter.exportPdfPages(pages, title: 'Three pages');
+
+    expect(entry.kind, 'pdf');
+    expect(entry.title, 'Three pages');
+
+    final saved = await File(entry.filePath).readAsBytes();
+    expect(String.fromCharCodes(saved), contains('%pages:3'));
+  });
+
+  test('exportPdfPages rejects an empty page list', () async {
+    expect(
+      () => exporter.exportPdfPages(<Uint8List>[].cast<Uint8List>()),
+      throwsArgumentError,
+    );
   });
 
   test('delete removes the row and the files from disk', () async {

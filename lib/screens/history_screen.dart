@@ -4,11 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../data/scan_repository.dart';
 import '../models/scan_entry.dart';
+import '../services/native_image_kit.dart';
 import '../services/scan_exporter.dart';
 import 'camera_screen.dart';
 import 'review_screen.dart';
@@ -82,10 +82,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Future<void> _open(ScanEntry entry) async {
     if (entry.isPdf) {
       try {
-        final bytes = await File(entry.filePath).readAsBytes();
-        await Printing.layoutPdf(
-          onLayout: (_) async => bytes,
-          name: entry.title,
+        await NativeImageKit.openFile(
+          path: entry.filePath,
+          mimeType: 'application/pdf',
         );
       } catch (error) {
         _snack('Could not open PDF: $error');

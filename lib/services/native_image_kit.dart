@@ -1,0 +1,162 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+
+/// Result of a single native decode of a capture.
+///
+/// [previewJpeg] is display-sized, [rgba] is a small oriented RGBA buffer for the
+/// edge detector, and [fullWidth]/[fullHeight] describe the true capture size so
+/// quads can be expressed in full-resolution coordinates.
+@immutable
+class AnalyzedCapture {
+  const AnalyzedCapture({
+    required this.previewJpeg,
+    required this.fullWidth,
+    required this.fullHeight,
+    required this.rgba,
+    required this.detectWidth,
+    required this.detectHeight,
+  });
+
+  final Uint8List previewJpeg;
+  final int fullWidth;
+  final int fullHeight;
+  final Uint8List rgba;
+  final int detectWidth;
+  final int detectHeight;
+}
+
+@immutable
+class WarpedPage {
+  const WarpedPage({
+    required this.bytes,
+    required this.width,
+    required this.height,
+  });
+
+  final Uint8List bytes;
+  final int width;
+  final int height;
+}
+
+/// Tone presets, applied as a single 4x5 colour matrix on the GPU.
+enum ScanFilter {
+  none(0, 'Original'),
+  enhance(1, 'Enhance'),
+  grayscale(2, 'Grayscale'),
+  blackAndWhite(3, 'Black & white');
+
+  const ScanFilter(this.id, this.label);
+
+  final int id;
+  final String label;
+}
+
+/// Thin bridge to [LensImageKit] on the Android side.
+///
+/// Decoding, EXIF orientation, perspective rectification, tone mapping, JPEG
+/// encoding and PDF assembly are all platform work. Dart never holds a
+/// full-resolution pixel buffer, which is what keeps previews crisp and the
+/// isolate heap small.
+abstract final class NativeImageKit {
+  static const MethodChannel _channel = MethodChannel('lens_lite/image');
+
+  static bool get isSupported => defaultTargetPlatform == TargetPlatform.android;
+
+  static void _requireAndroid() {
+    if (!isSupported) {
+      throw UnsupportedError('NativeImageKit requires Android');
+    }
+  }
+
+  /// Decodes once and returns a display preview plus a detector-sized buffer.
+  static Future<AnalyzedCapture> analyze(
+    Uint8List bytes, {
+    int previewEdge = 1440,
+    int detectEdge = 480,
+  }) async {
+    _requireAndroid();
+    final result = await _channel.invokeMapMethod<String, dynamic>('analyze', {
+      'bytes': bytes,
+      'previewEdge': previewEdge,
+      'detectEdge': detectEdge,
+    });
+    if (result == null) throw StateError('analyze returned no result');
+    return AnalyzedCapture(
+      previewJpeg: result['preview'] as Uint8List,
+      fullWidth: result['fullWidth'] as int,
+      fullHeight: result['fullHeight'] as int,
+      rgba: result['rgba'] as Uint8List,
+      detectWidth: result['detectWidth'] as int,
+      detectHeight: result['detectHeight'] as int,
+    );
+  }
+
+  /// Rectifies [corners] (full-resolution oriented coordinates, 8 values) at
+  /// capture resolution, bakes [filter] and encodes once.
+  static Future<WarpedPage> warp(
+    Uint8List bytes, {
+    required List<double> corners,
+    required int fullWidth,
+    required int fullHeight,
+    ScanFilter filter = ScanFilter.none,
+    int quality = 95,
+  }) async {
+    _requireAndroid();
+    final result = await _channel.invokeMapMethod<String, dynamic>('warp', {
+      'bytes': bytes,
+      'corners': corners,
+      'fullWidth': fullWidth,
+      'fullHeight': fullHeight,
+      'filter': filter.id,
+      'quality': quality,
+    });
+    if (result == null) throw StateError('warp returned no result');
+    return WarpedPage(
+      bytes: result['bytes'] as Uint8List,
+      width: result['width'] as int,
+      height: result['height'] as int,
+    );
+  }
+
+  /// Decodes at a reduced sample size, so a 12 MP page never reaches the heap.
+  static Future<Uint8List> thumbnail(
+    Uint8List bytes, {
+    int maxEdge = 320,
+    int quality = 80,
+  }) async {
+    _requireAndroid();
+    final result = await _channel.invokeMapMethod<String, dynamic>('thumbnail', {
+      'bytes': bytes,
+      'maxEdge': maxEdge,
+      'quality': quality,
+    });
+    if (result == null) throw StateError('thumbnail returned no result');
+    return result['bytes'] as Uint8List;
+  }
+
+  /// Writes a full-bleed multi-page PDF natively and returns the byte count.
+  static Future<int> writePdf({
+    required List<Uint8List> pages,
+    required String path,
+  }) async {
+    _requireAndroid();
+    final result = await _channel.invokeMapMethod<String, dynamic>('writePdf', {
+      'pages': pages,
+      'path': path,
+    });
+    if (result == null) throw StateError('writePdf returned no result');
+    return result['bytes'] as int;
+  }
+
+  /// Opens a saved scan in whatever viewer the device provides.
+  static Future<void> openFile({
+    required String path,
+    required String mimeType,
+  }) async {
+    _requireAndroid();
+    await _channel.invokeMethod<void>('openFile', {
+      'path': path,
+      'mime': mimeType,
+    });
+  }
+}
