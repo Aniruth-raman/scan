@@ -1,9 +1,8 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:image/image.dart' as img;
-
-import 'edge_detector.dart';
+import 'document_detection_worker.dart';
+import 'document_detector.dart';
 import 'native_image_kit.dart';
 
 /// Decoded preview of a captured page plus the corners to start from.
@@ -49,16 +48,14 @@ class RenderedPage {
 Future<AdjustPreview?> prepareAdjustPreview(Uint8List jpeg) async {
   final capture = await NativeImageKit.analyze(jpeg);
 
-  final small = img.Image.fromBytes(
-    width: capture.detectWidth,
-    height: capture.detectHeight,
-    bytes: capture.rgba.buffer,
-    order: img.ChannelOrder.rgba,
-  );
-
-  final detected =
-      EdgeDetector.detectInImage(small) ??
-      EdgeDetector.fullFrame(capture.detectWidth, capture.detectHeight);
+  // The model runs in its own isolate; a miss falls back to the full frame so
+  // the crop stage always has a draggable quad.
+  final detected = await DocumentDetectionWorker.instance.detectRgba(
+        capture.rgba,
+        width: capture.detectWidth,
+        height: capture.detectHeight,
+      ) ??
+      DocumentQuad.fullFrame(capture.detectWidth, capture.detectHeight);
 
   // Detector coordinates -> full-resolution coordinates.
   final scaleX = capture.fullWidth / capture.detectWidth;

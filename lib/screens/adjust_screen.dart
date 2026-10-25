@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../design/lens_tokens.dart';
 import '../services/document_image_ops.dart';
-import '../services/edge_detector.dart';
+import '../services/document_detector.dart';
 import '../services/native_image_kit.dart';
 
 /// Outcome of the crop stage.

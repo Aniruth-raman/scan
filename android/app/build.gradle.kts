@@ -4,6 +4,13 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// The document detector runs on the CPU through tflite_flutter's FFI binding.
+// The GPU delegate is a transitive dependency of the plugin and costs ~3.9 MB
+// of native code that nothing loads, so it is stripped from the graph.
+configurations.all {
+    exclude(group = "com.google.ai.edge.litert", module = "litert-gpu")
+}
+
 android {
     namespace = "com.example.lens_lite"
     // permission_handler_android requires compiling against SDK 37 or later.
@@ -15,12 +22,25 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    packaging {
+        // AAR-provided natives ignore ndk.abiFilters, so prune the emulator
+        // ABIs here as well (libtensorflowlite_jni.so alone is 5.8 MB on x86_64).
+        jniLibs {
+            excludes += listOf("lib/x86/**", "lib/x86_64/**")
+        }
+    }
+
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.lens_lite"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
+        // Real phones only: dropping x86/x86_64 emulator ABIs keeps the TFLite
+        // runtime from adding a 5.8 MB slice that no device will load.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
         // Target the current Android API level required for new apps.
         targetSdk = 37
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION

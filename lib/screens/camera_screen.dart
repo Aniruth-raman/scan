@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../design/lens_tokens.dart';
-import '../services/edge_detection_worker.dart';
-import '../services/edge_detector.dart';
+import '../services/document_detection_worker.dart';
+import '../services/document_detector.dart';
 import '../services/native_image_kit.dart';
 import '../services/scan_exporter.dart';
 import 'adjust_screen.dart';
@@ -50,7 +50,8 @@ class _CameraScreenState extends State<CameraScreen> {
   String? _error;
   _CaptureMode _mode = _CaptureMode.scan;
 
-  final EdgeDetectionWorker _detector = EdgeDetectionWorker();
+  final DocumentDetectionWorker _detector =
+      DocumentDetectionWorker.instance;
   DocumentQuad? _quad;
   bool _analyzing = false;
   bool _wasDetecting = false;
@@ -158,7 +159,7 @@ class _CameraScreenState extends State<CameraScreen> {
     _analyzing = true;
     try {
       final rotation = _controller?.description.sensorOrientation ?? 90;
-      final quad = await _detector.detect(
+      final quad = await _detector.detectLuma(
         luminance: Uint8List.fromList(yPlane.bytes),
         width: image.width,
         height: image.height,
@@ -298,7 +299,6 @@ class _CameraScreenState extends State<CameraScreen> {
 
   @override
   void dispose() {
-    _detector.dispose();
     _controller?.dispose();
     super.dispose();
   }

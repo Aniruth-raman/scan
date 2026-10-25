@@ -38,17 +38,20 @@ dependencies:
   sqflite: ^2.4.5
   path_provider: ^2.1.6
   share_plus: ^13.3.1
-  # Still required by the pure-Dart edge detector, which works on the small
-  # RGBA buffer supplied by the native analyzer.
-  image: ^4.12.0
   permission_handler: ^13.0.2
   intl: ^0.20.3
   path: ^1.9.1
   gal: ^2.3.3
+  # Runs the bundled M-LSD document-edge model (assets/models/document_edges.tflite).
+  # FFI binding to LiteRT; no Java surface, safe to call from our detection isolate.
+  tflite_flutter: ^0.12.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # Only the exporter test builds fixture JPEGs now: the app itself never
+  # decodes an image in Dart.
+  image: ^4.12.0
   integration_test:
     sdk: flutter
 
@@ -69,6 +72,12 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    # M-LSD ("Towards Light-weight and Real-time Line Segment Detection"),
+    # NAVER Corp, Apache-2.0. Licence text ships beside it.
+    - assets/models/document_edges.tflite
+    - assets/models/LICENSE-mlsd.txt
 
   # To add assets to your application, add an assets section, like this:
   # assets:
