@@ -106,14 +106,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   Future<void> _rename(ScanEntry entry) async {
-    final controller = TextEditingController(text: entry.title);
+    var value = entry.title;
     final name = await showDialog<String>(
       context: context,
+      // A TextFormField owns its own editing state, so nothing is disposed
+      // while the dialog's exit animation is still rebuilding.
       builder: (dialogContext) => AlertDialog(
         title: const Text('Rename scan'),
-        content: TextField(
-          controller: controller,
+        content: TextFormField(
+          initialValue: entry.title,
           autofocus: true,
+          onChanged: (text) => value = text,
           decoration: const InputDecoration(labelText: 'Name'),
         ),
         actions: [
@@ -122,8 +125,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () =>
-                Navigator.pop(dialogContext, controller.text.trim()),
+            onPressed: () => Navigator.pop(dialogContext, value.trim()),
             child: const Text('Rename'),
           ),
         ],

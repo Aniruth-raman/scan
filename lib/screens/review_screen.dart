@@ -208,8 +208,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
       }
 
       if (_savePdf) {
-        final entry = await widget.exporter.exportPdfPages(pages, title: _title);
-        parts.add('PDF: ${entry.title}');
+        final path = await widget.exporter.savePdf(pages, title: _title);
+        parts.add('PDF: $path');
       }
 
       HapticFeedback.mediumImpact();
@@ -255,14 +255,17 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   /// Renames the document. Returns null when the dialog was dismissed.
   Future<String?> _rename() async {
-    final controller = TextEditingController(text: _title);
+    var value = _title;
     final name = await showDialog<String>(
       context: context,
+      // A TextFormField owns its own editing state, so nothing is disposed
+      // while the dialog's exit animation is still rebuilding.
       builder: (dialogContext) => AlertDialog(
         title: const Text('Name'),
-        content: TextField(
-          controller: controller,
+        content: TextFormField(
+          initialValue: _title,
           autofocus: true,
+          onChanged: (text) => value = text,
           decoration: const InputDecoration(labelText: 'Scan name'),
         ),
         actions: [
@@ -271,14 +274,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () =>
-                Navigator.pop(dialogContext, controller.text.trim()),
+            onPressed: () => Navigator.pop(dialogContext, value.trim()),
             child: const Text('Rename'),
           ),
         ],
       ),
     );
-    controller.dispose();
     if (name == null || name.isEmpty) return null;
     _title = name;
     return name;
@@ -855,7 +856,7 @@ class _OptionsSheetState extends State<_OptionsSheet> {
         _CheckRow(
           icon: Icons.picture_as_pdf_outlined,
           label: 'PDF',
-          hint: 'All pages in one document',
+          hint: 'All pages in one PDF, in Downloads',
           checked: _pdf,
           onChanged: (value) {
             setState(() => _pdf = value);

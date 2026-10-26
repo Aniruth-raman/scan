@@ -9,6 +9,7 @@ import 'package:lens_lite/data/scan_repository.dart';
 import 'package:lens_lite/design/lens_tokens.dart';
 import 'package:lens_lite/screens/review_screen.dart';
 import 'package:lens_lite/services/scan_exporter.dart';
+import 'package:path/path.dart' as p;
 
 Uint8List fakeJpeg({int width = 320, int height = 240}) {
   final image = img.Image(width: width, height: height);
@@ -26,16 +27,17 @@ void main() {
 
   late Directory tempDir;
   late ScanExporter exporter;
+  late InMemoryScanRepository repository;
   late List<String> nativeCalls;
+  late List<Map<Object?, Object?>> pdfCalls;
   late bool galleryGranted;
 
   setUp(() {
     tempDir = Directory.systemTemp.createTempSync('lens_lite_review');
-    exporter = ScanExporter(
-      repository: InMemoryScanRepository(),
-      storageDirectory: tempDir,
-    );
+    repository = InMemoryScanRepository();
+    exporter = ScanExporter(repository: repository, storageDirectory: tempDir);
     nativeCalls = <String>[];
+    pdfCalls = <Map<Object?, Object?>>[];
     galleryGranted = true;
 
     final messenger =
@@ -54,6 +56,13 @@ void main() {
             'bytes': Uint8List.fromList(<int>[4, 5, 6]),
             'width': 320,
             'height': 240,
+          };
+        case 'writePdf':
+          final arguments = call.arguments as Map<Object?, Object?>;
+          pdfCalls.add(arguments);
+          return <String, dynamic>{
+            'name': '${arguments['name']}.pdf',
+            'location': 'Download/${arguments['folder']}',
           };
         default:
           throw MissingPluginException(call.method);
@@ -229,8 +238,31 @@ void main() {
     expect(nativeCalls, isEmpty, reason: 'an unedited page is already final');
   });
 
-  testWidgets('Finish saves an image and returns with a message',
-      (tester) async {
+  /// Renames the document through the options sheet, the way a user does.
+  Future<void> renameVia(WidgetTester tester, String name) async {
+    await tester.tap(find.text('Options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('Scan '));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), name);
+    await tester.tap(find.text('Rename'));
+    await tester.pumpAndSettle();
+    // Dismiss the sheet; the title is committed as it closes.
+    await tester.tapAt(const Offset(20, 40));
+    await tester.pumpAndSettle();
+  }
+
+  /// The page is written to the file system, which only advances on the real
+  /// event loop.
+  Future<void> finish(WidgetTester tester) async {
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Finish'));
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+    });
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('Finish saves the image under the renamed scan', (tester) async {
     await onAndroid(() async {
       ReviewResult? result;
       await pumpReview(
@@ -238,20 +270,18 @@ void main() {
         <Uint8List>[fakeJpeg()],
         onResult: (value) => result = value,
       );
+      await renameVia(tester, 'save');
 
-      // The page is written to the file system, which only advances on the real
-      // event loop.
-      await tester.runAsync(() async {
-        await tester.tap(find.text('Finish'));
-        await Future<void>.delayed(const Duration(milliseconds: 400));
-      });
-      await tester.pumpAndSettle();
+      await finish(tester);
 
       expect(nativeCalls, contains('thumbnail'));
+      // The file carries the name the user typed, not a timestamp.
       expect(
-        tempDir.listSync().where((file) => file.path.contains('scan_')),
-        hasLength(1),
+        File(p.join(tempDir.path, 'save.jpg')).existsSync(),
+        isTrue,
+        reason: 'saved as ${tempDir.listSync().map((f) => f.path)}',
       );
+      expect((await repository.all()).single.title, 'save');
       expect(result?.message, 'Saved to Gallery');
     });
   });
@@ -266,12 +296,9 @@ void main() {
         <Uint8List>[fakeJpeg()],
         onResult: (value) => result = value,
       );
+      await renameVia(tester, 'save');
 
-      await tester.runAsync(() async {
-        await tester.tap(find.text('Finish'));
-        await Future<void>.delayed(const Duration(milliseconds: 400));
-      });
-      await tester.pumpAndSettle();
+      await finish(tester);
 
       expect(result?.message, 'Saved to My Scans');
     });
@@ -292,6 +319,44 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(nativeCalls, <String>['transform']);
+    });
+  });
+
+  testWidgets('a PDF export takes the scan name and adds no second record',
+      (tester) async {
+    await onAndroid(() async {
+      ReviewResult? result;
+      await pumpReview(
+        tester,
+        <Uint8List>[fakeJpeg()],
+        onResult: (value) => result = value,
+      );
+      await renameVia(tester, 'Q4 report');
+
+      await tester.tap(find.text('Options'));
+      await tester.pumpAndSettle();
+      await tester.drag(find.text('TITLE'), const Offset(0, -400));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('PDF'));
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(20, 40));
+      await tester.pumpAndSettle();
+
+      await finish(tester);
+
+      expect(pdfCalls, hasLength(1));
+      expect(pdfCalls.single['name'], 'Q4 report');
+      expect(pdfCalls.single['folder'], 'Lens Lite');
+      expect(
+        result?.message,
+        'Saved to Gallery · PDF: Download/Lens Lite/Q4 report.pdf',
+      );
+
+      // The JPEG is the record; the document is only an export.
+      final scans = await repository.all();
+      expect(scans, hasLength(1));
+      expect(scans.single.kind, 'image');
+      expect(p.basename(scans.single.filePath), 'Q4 report.jpg');
     });
   });
 }

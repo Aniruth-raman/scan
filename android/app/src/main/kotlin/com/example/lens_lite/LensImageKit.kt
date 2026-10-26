@@ -1,5 +1,6 @@
 package com.example.lens_lite
 
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -12,8 +13,11 @@ import android.graphics.Matrix
 import android.graphics.Paint
 import android.media.ExifInterface
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
 import androidx.core.content.FileProvider
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -64,7 +68,7 @@ class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandl
             } catch (t: Throwable) {
                 main.post {
                     result.error(
-                        "lens_image_kit",
+                        if (t is StoragePermissionRequired) "storage_permission" else "lens_image_kit",
                         t.message ?: t.javaClass.simpleName,
                         null
                     )
@@ -295,7 +299,8 @@ class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandl
     // ------------------------------------------------------------- writePdf --
 
     /**
-     * Full-bleed multi-page PDF sized to each page's own aspect ratio.
+     * Full-bleed multi-page PDF sized to each page's own aspect ratio,
+     * published to shared Downloads so any file manager can open it.
      *
      * The pages arrive as finished JPEGs, so they are embedded as `DCTDecode`
      * image XObjects rather than decoded and re-compressed: the PDF costs
@@ -306,8 +311,8 @@ class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandl
     private fun writePdf(call: MethodCall): Map<String, Any> {
         val pages = call.argument<List<ByteArray>>("pages")
             ?: throw IllegalArgumentException("pages required")
-        val path = call.argument<String>("path")
-            ?: throw IllegalArgumentException("path required")
+        val name = call.argument<String>("name")?.takeIf { it.isNotBlank() } ?: "Scan"
+        val folder = call.argument<String>("folder")?.takeIf { it.isNotBlank() } ?: "Lens Lite"
         if (pages.isEmpty()) throw IllegalArgumentException("pages must not be empty")
 
         val images = pages.map { jpegInfo(it) }
@@ -382,11 +387,82 @@ class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandl
                 "startxref\n$xrefOffset\n%%EOF\n"
         )
 
-        val file = File(path)
-        file.parentFile?.mkdirs()
-        file.writeBytes(out.toByteArray())
-        return mapOf("path" to path, "bytes" to file.length(), "pages" to pages.size)
+        return publishPdf(out.toByteArray(), name, folder)
     }
+
+    /**
+     * Publishes the document through `MediaStore.Downloads` so it is visible in
+     * Files, and returns the collection and file name it landed under.
+     *
+     * API 28 and below have no Downloads collection: the file goes into the
+     * public Downloads directory instead, which needs the legacy storage grant.
+     */
+    private fun publishPdf(bytes: ByteArray, name: String, folder: String): Map<String, Any> {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val resolver = context.contentResolver
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, "$name.pdf")
+                put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
+                put(
+                    MediaStore.MediaColumns.RELATIVE_PATH,
+                    "${Environment.DIRECTORY_DOWNLOADS}/$folder"
+                )
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: throw IllegalStateException("Downloads refused the document")
+            try {
+                resolver.openOutputStream(uri)?.use { it.write(bytes) }
+                    ?: throw IllegalStateException("Downloads returned no stream")
+                values.clear()
+                values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+            } catch (t: Throwable) {
+                resolver.delete(uri, null, null)
+                throw t
+            }
+            return mapOf(
+                "name" to "$name.pdf",
+                "location" to "${Environment.DIRECTORY_DOWNLOADS}/$folder"
+            )
+        }
+
+        val directory = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            folder
+        )
+        val file = try {
+            if (!directory.exists() && !directory.mkdirs()) {
+                throw IllegalStateException("could not create ${directory.path}")
+            }
+            uniquePdf(directory, name)
+        } catch (_: SecurityException) {
+            // The legacy grant has not been asked for yet.
+            throw StoragePermissionRequired()
+        }
+        try {
+            file.writeBytes(bytes)
+        } catch (_: SecurityException) {
+            throw StoragePermissionRequired()
+        }
+        return mapOf(
+            "name" to file.name,
+            "location" to "${Environment.DIRECTORY_DOWNLOADS}/$folder"
+        )
+    }
+
+    private fun uniquePdf(directory: File, name: String): File {
+        var candidate = File(directory, "$name.pdf")
+        var index = 2
+        while (candidate.exists()) {
+            candidate = File(directory, "$name ($index).pdf")
+            index++
+        }
+        return candidate
+    }
+
+    /** Legacy-storage grant missing on API 24-28; the Dart side asks and retries. */
+    private class StoragePermissionRequired : SecurityException("storage permission required")
 
     private class JpegInfo(val width: Int, val height: Int, val components: Int)
 

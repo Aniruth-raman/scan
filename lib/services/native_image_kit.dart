@@ -221,18 +221,24 @@ abstract final class NativeImageKit {
     return result['bytes'] as Uint8List;
   }
 
-  /// Writes a full-bleed multi-page PDF natively and returns the byte count.
-  static Future<int> writePdf({
+  /// Publishes a full-bleed multi-page PDF into shared Downloads and returns
+  /// where it landed: the collection (`Download/Lens Lite`) and the file name.
+  static Future<({String name, String location})> writePdf({
     required List<Uint8List> pages,
-    required String path,
+    required String name,
+    String folder = 'Lens Lite',
   }) async {
     _requireAndroid();
     final result = await _channel.invokeMapMethod<String, dynamic>('writePdf', {
       'pages': pages,
-      'path': path,
+      'name': name,
+      'folder': folder,
     });
     if (result == null) throw StateError('writePdf returned no result');
-    return result['bytes'] as int;
+    return (
+      name: result['name'] as String,
+      location: result['location'] as String,
+    );
   }
 
   /// Opens a saved scan in whatever viewer the device provides.
