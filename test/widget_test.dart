@@ -191,7 +191,8 @@ void main() {
     expect(find.text('Dropped'), findsOneWidget);
     expect(find.byIcon(Icons.more_vert), findsNWidgets(3));
 
-    // Removing an imported file only hides it; nothing is deleted.
+    // Removing an imported file hides it for this screen; the file stays, and
+    // the dismissal is not remembered anywhere.
     await tester.tap(find.byIcon(Icons.more_vert).last);
     await tester.pumpAndSettle();
     expect(find.text('Remove from My Scans'), findsOneWidget);
@@ -199,10 +200,77 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Dropped'), findsNothing);
-    expect(await repository.hiddenMedia(), <String>{
-      'content://media/external/images/media/11',
-    });
     expect((await repository.all()).single.title, 'Receipt');
+    expect(tester.takeException(), isNull);
+
+    // A fresh screen is a fresh list: the file shows up again, as in the
+    // original.
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HistoryScreen(
+          repository: repository,
+          exporter: exporterFor(repository),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Dropped'), findsOneWidget);
+  });
+
+  testWidgets('a legacy record is not duplicated by its album copy', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(384, 832));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    const permissions = MethodChannel(
+      'flutter.baseflow.com/permissions/methods',
+    );
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(permissions, (call) async => 1);
+    addTearDown(() => messenger.setMockMethodCallHandler(permissions, null));
+
+    const channel = MethodChannel('lens_lite/image');
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      if (call.method != 'listShared') return null;
+      // The album copy of a row saved before `sharedUri` existed. MediaStore
+      // turned the colon into an underscore.
+      return <Map<String, Object?>>[
+        {
+          'uri': 'content://media/external/images/media/21',
+          'name': 'Scan Oct 26, 2026 10_32 PM.jpg',
+          'mime': 'image/jpeg',
+          'modified': 5000,
+          'size': 10,
+        },
+      ];
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+    final repository = InMemoryScanRepository(
+      seed: [
+        ScanEntry(
+          title: 'Scan Oct 26, 2026 10:32 PM',
+          kind: 'image',
+          filePath: '/tmp/scan.jpg',
+          createdAt: DateTime(2026, 10, 26, 22, 32),
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HistoryScreen(
+          repository: repository,
+          exporter: exporterFor(repository),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // One tile: the record. The album copy with the mangled name stays hidden.
+    expect(find.text('Scan Oct 26, 2026 10:32 PM'), findsOneWidget);
+    expect(find.byIcon(Icons.more_vert), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

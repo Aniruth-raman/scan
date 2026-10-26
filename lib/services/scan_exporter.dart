@@ -139,10 +139,6 @@ class ScanExporter {
     }
   }
 
-  /// Drops an indexed file from the list without touching it on disk, the way
-  /// the original treats files it did not create.
-  Future<void> deleteImported(String uri) => repository.hideMedia(uri);
-
   /// A file in app storage named after [title], with a numeric suffix when that
   /// name is already taken.
   File _freeFile(String title, String extension) {

@@ -39,6 +39,11 @@ class _HistoryScreenState extends State<HistoryScreen>
     with WidgetsBindingObserver {
   late Future<_ScanList> _scans;
 
+  /// Files the user dismissed from this screen. Deliberately in memory: the
+  /// original forgets the dismissal as soon as you come back, and the file was
+  /// never ours to delete.
+  final Set<String> _dismissed = <String>{};
+
   @override
   void initState() {
     super.initState();
@@ -54,8 +59,12 @@ class _HistoryScreenState extends State<HistoryScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Files can land in the shared folders while the app is in the background.
-    if (state == AppLifecycleState.resumed) _refresh();
+    // Files can land in the shared folders while the app is in the background,
+    // and a dismissal is only meant to last while you are looking at the list.
+    if (state == AppLifecycleState.resumed) {
+      _dismissed.clear();
+      _refresh();
+    }
   }
 
   void _refresh() {
@@ -66,8 +75,10 @@ class _HistoryScreenState extends State<HistoryScreen>
   }
 
   /// Re-reads the folders, asking for gallery access on an explicit pull (the
-  /// one moment the user is clearly asking to see what is out there).
+  /// one moment the user is clearly asking to see what is out there). A pull
+  /// also forgets past dismissals: "show me everything".
   Future<void> _refreshWithAccess() async {
+    _dismissed.clear();
     final scans = _load(requestAccess: true);
     setState(() {
       _scans = scans;
@@ -86,7 +97,6 @@ class _HistoryScreenState extends State<HistoryScreen>
       return _ScanList(records: records, imported: const <SharedMedia>[]);
     }
 
-    final hidden = await widget.repository.hiddenMedia();
     var media = const <SharedMedia>[];
     try {
       // A wedged permission request or MediaStore query must not hold the scan
@@ -101,19 +111,28 @@ class _HistoryScreenState extends State<HistoryScreen>
       for (final record in records)
         if (record.sharedUri != null) record.sharedUri!,
     };
-    final stems = <String>{
-      for (final record in records) ScanExporter.fileStem(record.title),
+    // Legacy rows predate `sharedUri`; their album copy has the same name, but
+    // MediaStore rewrites `:` to `_` and appends ` (1)` on a clash, so compare a
+    // loose key rather than the raw title.
+    final ownedNames = <String>{
+      for (final record in records) _nameKey(ScanExporter.fileStem(record.title)),
     };
     final imported = media.where((file) {
-      if (hidden.contains(file.uri) || owned.contains(file.uri)) return false;
-      // Legacy rows predate `sharedUri`; their album copy has the same stem.
-      return !stems.any(
-        (stem) => file.title == stem || file.title.startsWith('$stem ('),
-      );
+      if (_dismissed.contains(file.uri) || owned.contains(file.uri)) {
+        return false;
+      }
+      final suffix = RegExp(r'\s*\(\d+\)$');
+      return !ownedNames.contains(_nameKey(file.title)) &&
+          !ownedNames.contains(_nameKey(file.title.replaceFirst(suffix, '')));
     }).toList();
 
     return _ScanList(records: records, imported: imported);
   }
+
+  /// File names are compared with punctuation and case removed: the album copy of
+  /// `Scan 24 Oct, 10:32` comes back from MediaStore as `Scan 24 Oct, 10_32`.
+  static String _nameKey(String value) =>
+      value.toLowerCase().replaceAll(RegExp('[^a-z0-9]'), '');
 
   /// Reads both shared folders once gallery access is granted.
   Future<List<SharedMedia>> _indexShared({required bool requestAccess}) async {
@@ -166,6 +185,8 @@ class _HistoryScreenState extends State<HistoryScreen>
       ),
     );
     if (!mounted) return;
+    // Coming back to the list is a fresh look: dismissals do not survive it.
+    _dismissed.clear();
     _refresh();
     if (message != null) {
       _snack(message);
@@ -327,9 +348,9 @@ class _HistoryScreenState extends State<HistoryScreen>
       case 'open':
         await _openImported(media);
       case 'remove':
-        // The file stays: hiding it from the list is the whole operation.
-        await widget.exporter.deleteImported(media.uri);
-        if (!mounted) return;
+        // The file stays on disk; the dismissal lasts for this screen only, the
+        // way the original forgets it as soon as you navigate away.
+        setState(() => _dismissed.add(media.uri));
         _refresh();
         _snack('Removed “${media.title}” from My Scans');
     }

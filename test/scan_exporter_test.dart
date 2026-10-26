@@ -198,13 +198,9 @@ void main() {
     },
   );
 
-  test('removing an imported file only hides it', () async {
-    await exporter.deleteImported('content://media/external/images/media/42');
-
-    expect(await repository.hiddenMedia(), <String>{
-      'content://media/external/images/media/42',
-    });
-    // Nothing is deleted on disk: the file was never ours.
+  test('an imported file is never deleted by the exporter', () async {
+    // Dismissing an imported file is view state (see HistoryScreen); the
+    // exporter has no call that would touch someone else's file.
     expect(deletedUris, isEmpty);
   });
 }
