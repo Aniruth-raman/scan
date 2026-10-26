@@ -187,6 +187,21 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('a single page shows no page chip', (tester) async {
+    await pumpReview(tester, <Uint8List>[fakeJpeg()]);
+    expect(find.text('1/1'), findsNothing);
+  });
+
+  testWidgets('the page chip tracks the pager', (tester) async {
+    await pumpReview(tester, <Uint8List>[fakeJpeg(), fakeJpeg()]);
+    expect(find.text('1/2'), findsOneWidget);
+
+    await tester.drag(find.byType(PageView), const Offset(-320, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('2/2'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('rotate previews without touching the encoder', (tester) async {
     await pumpReview(tester, <Uint8List>[fakeJpeg()]);
 

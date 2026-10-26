@@ -63,6 +63,22 @@ class _CameraScreenState extends State<CameraScreen> {
   /// Pages captured in this session, already cropped.
   final List<Uint8List> _pages = <Uint8List>[];
 
+  /// Lens captures on its own once a document has held still; the shutter still
+  /// works as a manual override.
+  bool _autoCapture = true;
+
+  /// When the current outline started holding still, or null while it moves.
+  DateTime? _steadySince;
+
+  /// How long the outline has to hold before the shot is taken.
+  static const _steadyHold = Duration(milliseconds: 900);
+
+  /// How far the outline may drift between frames and still count as still,
+  /// as a fraction of the frame diagonal.
+  static const _steadyDrift = 0.006;
+
+  bool _moreOpen = false;
+
   bool get _detectEnabled => !_useFront;
 
   @override
@@ -176,6 +192,7 @@ class _CameraScreenState extends State<CameraScreen> {
       );
       // The detector has no memory of the previous frame; the smoother does, so
       // the outline stops hopping between competing candidates.
+      final previous = _quad;
       final smoothed = _smoother.update(quad, frame);
       setState(() {
         _quad = smoothed;
@@ -185,8 +202,35 @@ class _CameraScreenState extends State<CameraScreen> {
         HapticFeedback.selectionClick();
       }
       _wasDetecting = smoothed != null;
+      _trackSteadiness(previous, smoothed, frame);
     } finally {
       _analyzing = false;
+    }
+  }
+
+  /// Watches the smoothed outline and fires the shutter once it holds still.
+  ///
+  /// Steadiness is measured on the *drawn* quad, so the hold only starts when
+  /// the easing has converged — a document being moved keeps resetting it.
+  void _trackSteadiness(DocumentQuad? previous, DocumentQuad? current, Size frame) {
+    if (!_autoCapture ||
+        _capturing ||
+        _moreOpen ||
+        current == null ||
+        previous == null ||
+        !current.isUsable) {
+      _steadySince = null;
+      return;
+    }
+    final diagonal = math.sqrt(frame.width * frame.width + frame.height * frame.height);
+    if (current.distanceTo(previous) > diagonal * _steadyDrift) {
+      _steadySince = null;
+      return;
+    }
+    final since = _steadySince ??= DateTime.now();
+    if (DateTime.now().difference(since) >= _steadyHold) {
+      _steadySince = null;
+      _capture();
     }
   }
 
@@ -199,6 +243,7 @@ class _CameraScreenState extends State<CameraScreen> {
       _wasDetecting = false;
     });
     _smoother.reset();
+    _steadySince = null;
     await _pauseStream();
     final old = _controller;
     _controller = null;
@@ -221,6 +266,8 @@ class _CameraScreenState extends State<CameraScreen> {
     if (controller == null || !controller.value.isInitialized || _capturing) {
       return;
     }
+    // Whatever was holding still is stale the moment the shot is taken.
+    _steadySince = null;
     setState(() => _capturing = true);
     try {
       await _pauseStream();
@@ -489,7 +536,80 @@ class _CameraScreenState extends State<CameraScreen> {
             onMore: _showMore,
           ),
         ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: LensSpace.sm,
+          child: Center(child: _buildAutoCaptureHint()),
+        ),
       ],
+    );
+  }
+
+  /// The auto-capture hint, floating just above the filmstrip.
+  ///
+  /// The original shows the same two states in a rounded pill
+  /// (`lenshvc_auto_capture_hint_message_padding` 12 dp, 8 dp radius) and a
+  /// 1 dp progress line (`lenshvc_auto_capture_progress_thickness`) for the
+  /// hold before the shot.
+  Widget _buildAutoCaptureHint() {
+    final holding = _steadySince != null;
+    final String? label;
+    if (!_autoCapture || _initializing || _error != null) {
+      label = null;
+    } else if (_quad == null) {
+      label = 'Looking for a document';
+    } else if (holding) {
+      label = 'Hold steady';
+    } else {
+      label = 'Document found';
+    }
+
+    final progress = holding
+        ? (DateTime.now().difference(_steadySince!).inMilliseconds /
+                _steadyHold.inMilliseconds)
+            .clamp(0.0, 1.0)
+        : 0.0;
+
+    return AnimatedSwitcher(
+      duration: LensMotion.base,
+      child: label == null
+          ? const SizedBox.shrink()
+          : Container(
+              key: ValueKey<String>(label),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: LensColor.black30,
+                borderRadius: BorderRadius.circular(LensRadius.hero),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: LensType.label,
+                      color: LensColor.gray0,
+                    ),
+                  ),
+                  if (holding) ...[
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      width: 72,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(0.5),
+                        child: LinearProgressIndicator(
+                          value: progress,
+                          minHeight: 1,
+                          backgroundColor: LensColor.white70.withValues(alpha: 0.3),
+                          color: LensColor.accent,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
     );
   }
 
@@ -519,30 +639,60 @@ class _CameraScreenState extends State<CameraScreen> {
   }
 
   Future<void> _showMore() async {
+    _moreOpen = true;
     final action = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: LensColor.gray10,
       showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _SheetAction(
-              icon: Icons.cameraswitch_outlined,
-              label: 'Switch camera',
-              onTap: () => Navigator.pop(sheetContext, 'switch'),
-            ),
-            _SheetAction(
-              icon: _pages.isEmpty
-                  ? Icons.document_scanner_outlined
-                  : Icons.edit_note,
-              label: _pages.isEmpty ? 'Multi-page scanning' : 'Review pages',
-              onTap: () => Navigator.pop(sheetContext, 'review'),
-            ),
-          ],
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          // Scrollable so a short sheet box clamps instead of overflowing.
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              SwitchListTile(
+                secondary: Icon(
+                  _autoCapture
+                      ? Icons.motion_photos_on_outlined
+                      : Icons.motion_photos_off_outlined,
+                  color: LensColor.gray0,
+                ),
+                title: const Text(
+                  'Auto capture',
+                  style: TextStyle(color: LensColor.gray0),
+                ),
+                subtitle: const Text(
+                  'Take the shot once the page holds still',
+                  style: TextStyle(color: LensColor.gray6, fontSize: LensType.label),
+                ),
+                value: _autoCapture,
+                activeThumbColor: LensColor.accent,
+                onChanged: (value) {
+                  setSheetState(() {});
+                  setState(() {
+                    _autoCapture = value;
+                    _steadySince = null;
+                  });
+                },
+              ),
+              _SheetAction(
+                icon: Icons.cameraswitch_outlined,
+                label: 'Switch camera',
+                onTap: () => Navigator.pop(sheetContext, 'switch'),
+              ),
+              _SheetAction(
+                icon: _pages.isEmpty
+                    ? Icons.document_scanner_outlined
+                    : Icons.edit_note,
+                label: _pages.isEmpty ? 'Multi-page scanning' : 'Review pages',
+                onTap: () => Navigator.pop(sheetContext, 'review'),
+              ),
+            ],
+          ),
         ),
       ),
     );
+    _moreOpen = false;
     if (!mounted || action == null) return;
     switch (action) {
       case 'switch':

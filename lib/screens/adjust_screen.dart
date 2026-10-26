@@ -188,6 +188,15 @@ class _AdjustScreenState extends State<AdjustScreen> {
     final quad = _quad;
     if (quad == null || _displayJpeg == null || _applying) return;
 
+    if (!quad.isUsable) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Move the corners apart to frame the whole page.'),
+        ),
+      );
+      return;
+    }
+
     if (_quarterTurns == 0 &&
         _isFullFrame(quad) &&
         widget.filter == ScanFilter.none) {
@@ -280,13 +289,21 @@ class _AdjustScreenState extends State<AdjustScreen> {
       quad.bottomLeft,
     ];
     corners[index] = math.Point<double>(x, y);
+    final candidate = DocumentQuad(
+      topLeft: corners[0],
+      topRight: corners[1],
+      bottomRight: corners[2],
+      bottomLeft: corners[3],
+    );
+    if (!candidate.isUsable) {
+      // A corner dragged past its opposite side would bow-tie the quad and the
+      // warp would bake mostly white. Keep the last outline that still holds a
+      // page; the loupe keeps tracking the finger.
+      setState(() => _loupeAt = localPosition + origin);
+      return;
+    }
     setState(() {
-      _quad = DocumentQuad(
-        topLeft: corners[0],
-        topRight: corners[1],
-        bottomRight: corners[2],
-        bottomLeft: corners[3],
-      );
+      _quad = candidate;
       _loupeAt = localPosition + origin;
     });
   }

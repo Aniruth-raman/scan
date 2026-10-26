@@ -133,17 +133,7 @@ class QuadSmoother {
     );
   }
 
-  static double _distance(DocumentQuad a, DocumentQuad b) {
-    final corners = a.corners.toList();
-    final others = b.corners.toList();
-    var worst = 0.0;
-    for (var i = 0; i < 4; i++) {
-      final dx = corners[i].x - others[i].x;
-      final dy = corners[i].y - others[i].y;
-      worst = math.max(worst, math.sqrt(dx * dx + dy * dy));
-    }
-    return worst;
-  }
+  static double _distance(DocumentQuad a, DocumentQuad b) => a.distanceTo(b);
 
   static DocumentQuad _lerp(DocumentQuad from, DocumentQuad to, double t) {
     math.Point<double> mix(math.Point<double> a, math.Point<double> b) =>

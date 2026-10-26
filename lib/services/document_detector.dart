@@ -40,6 +40,58 @@ class DocumentQuad {
         bottomRight: math.Point(width - 1.0, height - 1.0),
         bottomLeft: math.Point(0, height - 1.0),
       );
+
+  /// Largest corner-to-corner distance to [other], in pixels.
+  double distanceTo(DocumentQuad other) {
+    final mine = corners.toList();
+    final theirs = other.corners.toList();
+    var worst = 0.0;
+    for (var i = 0; i < 4; i++) {
+      final dx = mine[i].x - theirs[i].x;
+      final dy = mine[i].y - theirs[i].y;
+      worst = math.max(worst, math.sqrt(dx * dx + dy * dy));
+    }
+    return worst;
+  }
+
+  /// True when the four corners still describe a page: convex, ordered, and not
+  /// squashed into a sliver.
+  ///
+  /// Dragging one corner across the opposite side makes the outline bow-tie, and
+  /// dragging two corners together collapses an edge; either way the warp maps
+  /// most of the source outside the page and the uncovered rest comes back
+  /// white. This is the test that keeps that from being baked.
+  bool get isUsable {
+    final points = corners.toList();
+    var winding = 0;
+    for (var i = 0; i < 4; i++) {
+      final a = points[i];
+      final b = points[(i + 1) % 4];
+      final c = points[(i + 2) % 4];
+      final cross = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x);
+      if (cross.abs() < 1e-6) return false;
+      final turn = cross > 0 ? 1 : -1;
+      if (winding == 0) {
+        winding = turn;
+      } else if (turn != winding) {
+        return false;
+      }
+    }
+
+    // A page can be foreshortened, but no side of it collapses onto another.
+    var shortest = double.infinity;
+    var longest = 0.0;
+    for (var i = 0; i < 4; i++) {
+      final a = points[i];
+      final b = points[(i + 1) % 4];
+      final length = math.sqrt(
+        (b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y),
+      );
+      shortest = math.min(shortest, length);
+      longest = math.max(longest, length);
+    }
+    return longest > 0 && shortest / longest >= 0.15;
+  }
 }
 
 /// Document edge detection with the M-LSD model

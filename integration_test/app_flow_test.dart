@@ -71,6 +71,23 @@ void main() {
     return repository;
   }
 
+  /// Auto capture would fire on its own while the test is still setting up, so
+  /// the flows turn it off the way a user would: More options -> Auto capture.
+  Future<void> disableAutoCapture(WidgetTester tester) async {
+    await tester.tap(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics && widget.properties.label == 'More options',
+      ),
+    );
+    await waitFor(tester, find.text('Auto capture'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('Auto capture'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tapAt(const Offset(20, 40));
+    await tester.pump(const Duration(milliseconds: 400));
+  }
+
   /// Capture one page and leave the app on the review stage.
   Future<void> captureToReview(WidgetTester tester) async {
     await tester.tap(find.byIcon(Icons.photo_camera));
@@ -81,6 +98,7 @@ void main() {
     );
     // Let the detector find the page so the crop stage starts from a quad.
     await tester.pump(const Duration(seconds: 2));
+    await disableAutoCapture(tester);
 
     await tester.tap(shutter);
     expect(

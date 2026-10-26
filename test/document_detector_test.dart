@@ -159,5 +159,63 @@ void main() {
       final quad = DocumentQuad.fullFrame(10, 10).scale(4, 2);
       expect(quad.bottomRight, const math.Point(36.0, 18.0));
     });
+
+    test('a perspective page is usable', () {
+      // A page seen off-axis: the far edge is shorter than the near one.
+      const quad = DocumentQuad(
+        topLeft: math.Point(180, 120),
+        topRight: math.Point(620, 90),
+        bottomRight: math.Point(700, 620),
+        bottomLeft: math.Point(90, 680),
+      );
+      expect(quad.isUsable, isTrue);
+    });
+
+    test('corners dragged past each other are not usable', () {
+      // Top-right and bottom-right swapped: the outline hourglasses, and the
+      // warp would bake mostly white.
+      const bowTie = DocumentQuad(
+        topLeft: math.Point(100, 100),
+        topRight: math.Point(400, 400),
+        bottomRight: math.Point(400, 100),
+        bottomLeft: math.Point(100, 400),
+      );
+      expect(bowTie.isUsable, isFalse);
+    });
+
+    test('two corners dragged together are not usable', () {
+      // The bottom edge has collapsed to nothing: a thin strip of white came
+      // back the last time this was let through.
+      const sliver = DocumentQuad(
+        topLeft: math.Point(100, 100),
+        topRight: math.Point(400, 100),
+        bottomRight: math.Point(400, 105),
+        bottomLeft: math.Point(100, 105),
+      );
+      expect(sliver.isUsable, isFalse);
+    });
+
+    test('collinear corners are not usable', () {
+      const flat = DocumentQuad(
+        topLeft: math.Point(0, 0),
+        topRight: math.Point(100, 0),
+        bottomRight: math.Point(200, 0),
+        bottomLeft: math.Point(100, 0),
+      );
+      expect(flat.isUsable, isFalse);
+    });
+
+    test('distanceTo measures the worst corner', () {
+      final a = DocumentQuad.fullFrame(100, 100);
+      final b = a.scale(1, 1);
+      expect(a.distanceTo(b), 0);
+      final moved = DocumentQuad(
+        topLeft: const math.Point(3, 4),
+        topRight: a.topRight,
+        bottomRight: a.bottomRight,
+        bottomLeft: a.bottomLeft,
+      );
+      expect(a.distanceTo(moved), closeTo(5, 1e-9));
+    });
   });
 }

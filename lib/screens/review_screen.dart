@@ -423,6 +423,41 @@ class _ReviewScreenState extends State<ReviewScreen> {
               ),
             ),
           ),
+          if (_pages.length > 1)
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: Semantics(
+                  // `lenshvc_CollectionViewPageNumber`: min 37 x 28 dp, 4 dp
+                  // radius, 12 sp white on `lenshvc_page_number_background`.
+                  label: 'Page ${_index + 1} of ${_pages.length}',
+                  excludeSemantics: true,
+                  child: Container(
+                    constraints: const BoxConstraints(
+                      minWidth: LensSize.pageNumberWidth,
+                    ),
+                    height: LensSize.pageNumberHeight,
+                    padding: const EdgeInsets.symmetric(horizontal: LensSpace.xs),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: LensColor.pageNumberFill,
+                      borderRadius: BorderRadius.circular(LensRadius.card),
+                    ),
+                    child: Text(
+                      '${_index + 1}/${_pages.length}',
+                      style: const TextStyle(
+                        fontSize: LensType.label,
+                        color: LensColor.gray0,
+                        height: 1,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           Positioned(
             right: 0,
             top: 0,

@@ -42,6 +42,9 @@ abstract final class LensColor {
   static const trayFill = Color(0x80404040);
   static const trayStroke = Color(0x66606060);
 
+  /// `lenshvc_page_number_background`, the review stage's page chip.
+  static const pageNumberFill = Color(0xB3303030);
+
   /// `lenshvc_color_black_30`.
   static const black30 = Color(0x4D000000);
   static const white70 = Color(0xB4FFFFFF);
@@ -151,6 +154,11 @@ abstract final class LensSize {
 
   static const icon = 24.0;
   static const iconSmall = 20.0;
+
+  /// `lenshvc_CollectionViewPageNumber_container_width` — the review stage's
+  /// page chip, 37 x 28 dp (`lenshvc_viewpager_peak_size`) with a 4 dp radius.
+  static const pageNumberWidth = 37.0;
+  static const pageNumberHeight = 28.0;
 
   /// `lenshvc_packaging_sheet_handle`
   static const sheetHandleWidth = 36.0;

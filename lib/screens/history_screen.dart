@@ -154,8 +154,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
       context: context,
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        // Scrollable so a short sheet box clamps instead of overflowing.
+        child: ListView(
+          shrinkWrap: true,
           children: [
             for (final item in const <(String, String, IconData)>[
               ('open', 'Open', Icons.open_in_new),
