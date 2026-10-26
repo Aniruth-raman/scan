@@ -73,6 +73,11 @@ abstract final class LensColor {
   /// `lensPackaging_Handle_color`.
   static const sheetHandle = Color(0xFF919191);
 
+  /// `info_recent_files` / `info_recent_files_caption` — the band under the
+  /// scan menu that names where the file lives.
+  static const locationBand = Color(0xFFE5E5E5);
+  static const locationCaption = Color(0xFF595959);
+
   static const disabled = Color(0xFF919191);
   static const danger = Color(0xFFB00020);
 
@@ -159,6 +164,10 @@ abstract final class LensSize {
   /// page chip, 37 x 28 dp (`lenshvc_viewpager_peak_size`) with a 4 dp radius.
   static const pageNumberWidth = 37.0;
   static const pageNumberHeight = 28.0;
+
+  /// `fragment_recent_items_info_parent` — the file-location band in the scan
+  /// menu.
+  static const locationBandHeight = 46.0;
 
   /// `lenshvc_packaging_sheet_handle`
   static const sheetHandleWidth = 36.0;

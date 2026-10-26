@@ -172,6 +172,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 ),
                 onTap: () => Navigator.pop(sheetContext, item.$1),
               ),
+            _LocationFooter(entry: entry),
           ],
         ),
       ),
@@ -257,9 +258,59 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 }
 
+/// `fragment_recent_items_info_parent`: the 46 dp band under the scan menu that
+/// says where the file went.
+///
+/// The original shows its own folder here ("Phone Storage > Pictures > Office
+/// Lens"). `lens_lite` keeps its record private, so the band names the shared
+/// copy the user can actually reach: the gallery album for an image, the
+/// Downloads folder for a PDF.
+class _LocationFooter extends StatelessWidget {
+  const _LocationFooter({required this.entry});
+
+  final ScanEntry entry;
+
+  String get _path => entry.isPdf
+      ? 'Phone Storage > Download > Lens Lite'
+      : 'Phone Storage > Pictures > Lens Lite';
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Location of the file: $_path',
+      excludeSemantics: true,
+      child: Container(
+        height: LensSize.locationBandHeight,
+        color: LensColor.locationBand,
+        padding: const EdgeInsets.symmetric(horizontal: LensSpace.md),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.info_outline,
+              size: LensSize.icon,
+              color: LensColor.locationCaption,
+            ),
+            const SizedBox(width: LensSpace.md),
+            Expanded(
+              child: Text(
+                _path,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: LensType.body,
+                  color: LensColor.locationCaption,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// One line of centred secondary text, as in the original.
-class _EmptyScans extends StatelessWidget {
-  const _EmptyScans({required this.bottomInset});
+class _EmptyScans extends StatelessWidget {  const _EmptyScans({required this.bottomInset});
 
   final double bottomInset;
 
