@@ -4,7 +4,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../design/lens_tokens.dart';
+import '../design/scan_tokens.dart';
 import '../services/document_detection_worker.dart';
 import '../services/document_detector.dart';
 import '../services/native_image_kit.dart';
@@ -15,7 +15,7 @@ import 'review_screen.dart';
 
 /// Capture stage: black chrome, live edge detection, and a session filmstrip.
 ///
-/// Geometry measured from `com.microsoft.office.officelens` on 384 x 832 dp:
+/// Geometry measured on the 384 x 832 dp reference viewport:
 /// 48 dp targets 12 dp in from the top corners, a vertical two-slot tray at the
 /// right, a 68 dp shutter ring, a 46 dp mode carousel and an 82 dp filmstrip
 /// sitting 24 dp above the ring.
@@ -62,7 +62,7 @@ class _CameraScreenState extends State<CameraScreen> {
   /// Pages captured in this session, already cropped.
   final List<Uint8List> _pages = <Uint8List>[];
 
-  /// Lens captures on its own once a document has held still; the shutter still
+  /// Scan captures on its own once a document has held still; the shutter still
   /// works as a manual override.
   bool _autoCapture = true;
 
@@ -387,8 +387,8 @@ class _CameraScreenState extends State<CameraScreen> {
         systemNavigationBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor: LensColor.stageBlack,
-        // Lens does not bleed the preview under the system bars. The status bar
+        backgroundColor: ScanColor.stageBlack,
+        // The preview does not bleed under the system bars. The status bar
         // is a solid black band, the preview stops at the filmstrip, and the
         // shutter/carousel band below it is black as well.
         body: Column(
@@ -421,7 +421,7 @@ class _CameraScreenState extends State<CameraScreen> {
           height: 28,
           child: CircularProgressIndicator(
             strokeWidth: 2.5,
-            color: LensColor.gray0,
+            color: ScanColor.gray0,
           ),
         ),
       );
@@ -448,8 +448,8 @@ class _CameraScreenState extends State<CameraScreen> {
               CameraPreview(controller),
               IgnorePointer(
                 child: AnimatedOpacity(
-                  duration: LensMotion.base,
-                  curve: LensMotion.curve,
+                  duration: ScanMotion.base,
+                  curve: ScanMotion.curve,
                   opacity: _quad == null ? 0 : 1,
                   child: CustomPaint(
                     painter: _QuadOutlinePainter(
@@ -469,31 +469,31 @@ class _CameraScreenState extends State<CameraScreen> {
   Widget _buildError(String error) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(LensSpace.lg),
+        padding: const EdgeInsets.all(ScanSpace.lg),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(
               Icons.no_photography_outlined,
-              color: LensColor.white70,
+              color: ScanColor.white70,
               size: 48,
             ),
-            const SizedBox(height: LensSpace.sm),
+            const SizedBox(height: ScanSpace.sm),
             const Text(
               'Camera unavailable',
               style: TextStyle(
-                color: LensColor.gray0,
+                color: ScanColor.gray0,
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: LensSpace.xs),
+            const SizedBox(height: ScanSpace.xs),
             Text(
               error,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: LensColor.gray6, fontSize: 12),
+              style: const TextStyle(color: ScanColor.gray6, fontSize: 12),
             ),
-            const SizedBox(height: LensSpace.md),
+            const SizedBox(height: ScanSpace.md),
             FilledButton.tonal(
               onPressed: () {
                 setState(() {
@@ -517,8 +517,8 @@ class _CameraScreenState extends State<CameraScreen> {
     return Stack(
       children: [
         Positioned(
-          left: LensSpace.md + LensSpace.xxs,
-          top: LensSpace.md,
+          left: ScanSpace.md + ScanSpace.xxs,
+          top: ScanSpace.md,
           child: _BarGlyph(
             icon: Icons.chevron_left,
             label: 'Back to My Scans',
@@ -527,8 +527,8 @@ class _CameraScreenState extends State<CameraScreen> {
           ),
         ),
         Positioned(
-          right: LensSpace.sm,
-          top: LensSpace.sm,
+          right: ScanSpace.sm,
+          top: ScanSpace.sm,
           child: _ToolTray(
             flashIcon: _flashIcon,
             flashLabel: switch (_flash) {
@@ -543,7 +543,7 @@ class _CameraScreenState extends State<CameraScreen> {
         Positioned(
           left: 0,
           right: 0,
-          bottom: LensSpace.sm,
+          bottom: ScanSpace.sm,
           child: Center(child: _buildAutoCaptureHint()),
         ),
       ],
@@ -553,8 +553,8 @@ class _CameraScreenState extends State<CameraScreen> {
   /// The auto-capture hint, floating just above the filmstrip.
   ///
   /// The original shows the same two states in a rounded pill
-  /// (`lenshvc_auto_capture_hint_message_padding` 12 dp, 8 dp radius) and a
-  /// 1 dp progress line (`lenshvc_auto_capture_progress_thickness`) for the
+  /// ( 12 dp, 8 dp radius) and a
+  /// 1 dp progress line () for the
   /// hold before the shot.
   Widget _buildAutoCaptureHint() {
     final holding = _steadySince != null;
@@ -576,15 +576,15 @@ class _CameraScreenState extends State<CameraScreen> {
         : 0.0;
 
     return AnimatedSwitcher(
-      duration: LensMotion.base,
+      duration: ScanMotion.base,
       child: label == null
           ? const SizedBox.shrink()
           : Container(
               key: ValueKey<String>(label),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: LensColor.black30,
-                borderRadius: BorderRadius.circular(LensRadius.hero),
+                color: ScanColor.black30,
+                borderRadius: BorderRadius.circular(ScanRadius.hero),
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -592,8 +592,8 @@ class _CameraScreenState extends State<CameraScreen> {
                   Text(
                     label,
                     style: const TextStyle(
-                      fontSize: LensType.label,
-                      color: LensColor.gray0,
+                      fontSize: ScanType.label,
+                      color: ScanColor.gray0,
                     ),
                   ),
                   if (holding) ...[
@@ -605,10 +605,10 @@ class _CameraScreenState extends State<CameraScreen> {
                         child: LinearProgressIndicator(
                           value: progress,
                           minHeight: 1,
-                          backgroundColor: LensColor.white70.withValues(
+                          backgroundColor: ScanColor.white70.withValues(
                             alpha: 0.3,
                           ),
-                          color: LensColor.accent,
+                          color: ScanColor.accent,
                         ),
                       ),
                     ),
@@ -625,14 +625,14 @@ class _CameraScreenState extends State<CameraScreen> {
   /// into the space and the band animates in on the first shot.
   Widget _buildBottomChrome(double bottomInset) {
     return AnimatedSize(
-      duration: LensMotion.base,
-      curve: LensMotion.curve,
+      duration: ScanMotion.base,
+      curve: ScanMotion.curve,
       alignment: Alignment.topCenter,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (_pages.isNotEmpty) _Filmstrip(pages: _pages, onTap: _review),
-          const SizedBox(height: LensSpace.lg),
+          const SizedBox(height: ScanSpace.lg),
           _CaptureRing(busy: _capturing, onTap: _capture),
           _ModeCarousel(
             selected: _mode,
@@ -648,7 +648,7 @@ class _CameraScreenState extends State<CameraScreen> {
     _moreOpen = true;
     final action = await showModalBottomSheet<String>(
       context: context,
-      backgroundColor: LensColor.gray10,
+      backgroundColor: ScanColor.gray10,
       showDragHandle: true,
       builder: (sheetContext) => StatefulBuilder(
         builder: (context, setSheetState) => SafeArea(
@@ -661,21 +661,21 @@ class _CameraScreenState extends State<CameraScreen> {
                   _autoCapture
                       ? Icons.motion_photos_on_outlined
                       : Icons.motion_photos_off_outlined,
-                  color: LensColor.gray0,
+                  color: ScanColor.gray0,
                 ),
                 title: const Text(
                   'Auto capture',
-                  style: TextStyle(color: LensColor.gray0),
+                  style: TextStyle(color: ScanColor.gray0),
                 ),
                 subtitle: const Text(
                   'Take the shot once the page holds still',
                   style: TextStyle(
-                    color: LensColor.gray6,
-                    fontSize: LensType.label,
+                    color: ScanColor.gray6,
+                    fontSize: ScanType.label,
                   ),
                 ),
                 value: _autoCapture,
-                activeThumbColor: LensColor.accent,
+                activeThumbColor: ScanColor.accent,
                 onChanged: (value) {
                   setSheetState(() {});
                   setState(() {
@@ -738,25 +738,25 @@ class _CaptureRingState extends State<_CaptureRing> {
         onTap: widget.busy ? null : widget.onTap,
         child: AnimatedScale(
           scale: _pressed ? 0.94 : 1,
-          duration: LensMotion.fast,
-          curve: LensMotion.curve,
+          duration: ScanMotion.fast,
+          curve: ScanMotion.curve,
           child: SizedBox(
-            width: LensSize.captureRing,
-            height: LensSize.captureRing,
+            width: ScanSize.captureRing,
+            height: ScanSize.captureRing,
             child: widget.busy
                 ? const Padding(
                     padding: EdgeInsets.all(18),
                     child: CircularProgressIndicator(
                       strokeWidth: 2.5,
-                      color: LensColor.gray0,
+                      color: ScanColor.gray0,
                     ),
                   )
                 : DecoratedBox(
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: LensColor.gray0,
-                        width: LensSize.captureStroke,
+                        color: ScanColor.gray0,
+                        width: ScanSize.captureStroke,
                       ),
                     ),
                   ),
@@ -785,9 +785,9 @@ class _ToolTray extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: LensColor.trayFill,
-        borderRadius: BorderRadius.circular(LensRadius.tray),
-        border: Border.all(color: LensColor.trayStroke),
+        color: ScanColor.trayFill,
+        borderRadius: BorderRadius.circular(ScanRadius.tray),
+        border: Border.all(color: ScanColor.trayStroke),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -796,13 +796,13 @@ class _ToolTray extends StatelessWidget {
             icon: flashIcon,
             label: flashLabel,
             onTap: onFlash,
-            size: LensSize.icon,
+            size: ScanSize.icon,
           ),
           _BarGlyph(
             icon: Icons.more_vert,
             label: 'More options',
             onTap: onMore,
-            size: LensSize.icon,
+            size: ScanSize.icon,
           ),
         ],
       ),
@@ -815,7 +815,7 @@ class _BarGlyph extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
-    this.size = LensSize.icon,
+    this.size = ScanSize.icon,
   });
 
   final IconData icon;
@@ -829,19 +829,19 @@ class _BarGlyph extends StatelessWidget {
       button: true,
       label: label,
       child: SizedBox(
-        width: LensSize.touch,
-        height: LensSize.touch,
+        width: ScanSize.touch,
+        height: ScanSize.touch,
         child: InkResponse(
           onTap: onTap,
           radius: 24,
-          child: Icon(icon, size: size, color: LensColor.gray0),
+          child: Icon(icon, size: size, color: ScanColor.gray0),
         ),
       ),
     );
   }
 }
 
-/// Uppercase, tracked mode carousel — the signature Lens type cue.
+/// Uppercase, tracked mode carousel - the signature type cue.
 class _ModeCarousel extends StatelessWidget {
   const _ModeCarousel({required this.selected, required this.onSelected});
 
@@ -855,14 +855,14 @@ class _ModeCarousel extends StatelessWidget {
       child: Center(
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
-          // `lenshvc_carousel_view_margin` keeps the first and last label clear
+          //  keeps the first and last label clear
           // of the import button and the camera switcher.
           padding: const EdgeInsets.symmetric(horizontal: 48),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               for (var i = 0; i < _CaptureMode.values.length; i++) ...[
-                if (i > 0) const SizedBox(width: LensSpace.xxs),
+                if (i > 0) const SizedBox(width: ScanSpace.xxs),
                 _CarouselLabel(
                   mode: _CaptureMode.values[i],
                   selected: _CaptureMode.values[i] == selected,
@@ -900,18 +900,18 @@ class _CarouselLabel extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: LensSpace.xs),
+          padding: const EdgeInsets.symmetric(horizontal: ScanSpace.xs),
           child: Center(
             // Selection eases instead of snapping: the carousel is the stage's
             // main type cue, so it carries the state change.
             child: AnimatedDefaultTextStyle(
-              duration: LensMotion.fast,
-              curve: LensMotion.curve,
+              duration: ScanMotion.fast,
+              curve: ScanMotion.curve,
               style: TextStyle(
-                fontSize: LensType.label,
-                letterSpacing: LensType.carouselTracking,
+                fontSize: ScanType.label,
+                letterSpacing: ScanType.carouselTracking,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                color: selected ? LensColor.gray0 : LensColor.gray6,
+                color: selected ? ScanColor.gray0 : ScanColor.gray6,
               ),
               child: Text(mode.label),
             ),
@@ -977,8 +977,8 @@ class _SheetAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(icon, color: LensColor.gray0),
-      title: Text(label, style: const TextStyle(color: LensColor.gray0)),
+      leading: Icon(icon, color: ScanColor.gray0),
+      title: Text(label, style: const TextStyle(color: ScanColor.gray0)),
       onTap: onTap,
     );
   }
@@ -1022,7 +1022,7 @@ class _QuadOutlinePainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2
         ..strokeJoin = StrokeJoin.round
-        ..color = LensColor.accent,
+        ..color = ScanColor.accentLight,
     );
   }
 

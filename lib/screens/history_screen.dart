@@ -7,8 +7,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../data/scan_repository.dart';
-import '../design/lens_tokens.dart';
-import '../design/lens_top_bar.dart';
+import '../design/scan_tokens.dart';
+import '../design/scan_top_bar.dart';
 import '../models/scan_entry.dart';
 import '../services/native_image_kit.dart';
 import '../services/scan_exporter.dart';
@@ -278,10 +278,10 @@ class _HistoryScreenState extends State<HistoryScreen>
               ('delete', 'Delete', Icons.delete_outline),
             ])
               ListTile(
-                leading: Icon(item.$3, color: LensColor.gray9),
+                leading: Icon(item.$3, color: ScanColor.gray9),
                 title: Text(
                   item.$2,
-                  style: const TextStyle(color: LensColor.gray10),
+                  style: const TextStyle(color: ScanColor.gray10),
                 ),
                 onTap: () => Navigator.pop(sheetContext, item.$1),
               ),
@@ -323,18 +323,18 @@ class _HistoryScreenState extends State<HistoryScreen>
           shrinkWrap: true,
           children: [
             ListTile(
-              leading: const Icon(Icons.open_in_new, color: LensColor.gray9),
+              leading: const Icon(Icons.open_in_new, color: ScanColor.gray9),
               title: const Text(
                 'Open',
-                style: TextStyle(color: LensColor.gray10),
+                style: TextStyle(color: ScanColor.gray10),
               ),
               onTap: () => Navigator.pop(sheetContext, 'open'),
             ),
             ListTile(
-              leading: const Icon(Icons.delete_outline, color: LensColor.gray9),
+              leading: const Icon(Icons.delete_outline, color: ScanColor.gray9),
               title: const Text(
                 'Remove from My Scans',
-                style: TextStyle(color: LensColor.gray10),
+                style: TextStyle(color: ScanColor.gray10),
               ),
               onTap: () => Navigator.pop(sheetContext, 'remove'),
             ),
@@ -372,14 +372,14 @@ class _HistoryScreenState extends State<HistoryScreen>
         systemNavigationBarIconBrightness: Brightness.dark,
       ),
       child: Scaffold(
-        backgroundColor: LensColor.gray1,
+        backgroundColor: ScanColor.gray1,
         body: SafeArea(
           bottom: false,
           child: Stack(
             children: [
               Column(
                 children: [
-                  const LensListTopBar(title: 'My Scans'),
+                  const ScanListTopBar(title: 'My Scans'),
                   Expanded(
                     child: FutureBuilder<_ScanList>(
                       future: _scans,
@@ -391,7 +391,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                               height: 28,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2.5,
-                                color: LensColor.accent,
+                                color: ScanColor.accent,
                               ),
                             ),
                           );
@@ -415,7 +415,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                 ],
               ),
               Positioned(
-                right: LensSpace.md,
+                right: ScanSpace.md,
                 bottom: 40 + bottomInset,
                 child: _CaptureButton(onPressed: _capture),
               ),
@@ -482,10 +482,9 @@ class _ImportedItem implements _FlowItem {
 /// `fragment_recent_items_info_parent`: the 46 dp band under the scan menu that
 /// says where the file went.
 ///
-/// The original shows its own folder here ("Phone Storage > Pictures > Office
-/// Lens"). `lens_lite` keeps its record private, so the band names the shared
-/// copy the user can actually reach: the gallery album for an image, the
-/// Downloads folder for a PDF.
+/// The location band names the shared copy the user can actually reach - the
+/// gallery album for an image, the Downloads folder for a PDF - because the
+/// record itself lives in app storage, which no file manager shows.
 class _LocationFooter extends StatelessWidget {
   const _LocationFooter({required this.path});
 
@@ -497,25 +496,25 @@ class _LocationFooter extends StatelessWidget {
       label: 'Location of the file: $path',
       excludeSemantics: true,
       child: Container(
-        height: LensSize.locationBandHeight,
-        color: LensColor.locationBand,
-        padding: const EdgeInsets.symmetric(horizontal: LensSpace.md),
+        height: ScanSize.locationBandHeight,
+        color: ScanColor.locationBand,
+        padding: const EdgeInsets.symmetric(horizontal: ScanSpace.md),
         child: Row(
           children: [
             const Icon(
               Icons.info_outline,
-              size: LensSize.icon,
-              color: LensColor.locationCaption,
+              size: ScanSize.icon,
+              color: ScanColor.locationCaption,
             ),
-            const SizedBox(width: LensSpace.md),
+            const SizedBox(width: ScanSpace.md),
             Expanded(
               child: Text(
                 path,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  fontSize: LensType.body,
-                  color: LensColor.locationCaption,
+                  fontSize: ScanType.body,
+                  color: ScanColor.locationCaption,
                 ),
               ),
             ),
@@ -537,17 +536,17 @@ class _EmptyScans extends StatelessWidget {
     return Center(
       child: Padding(
         padding: EdgeInsets.fromLTRB(
-          LensSpace.lg,
+          ScanSpace.lg,
           0,
-          LensSpace.lg,
+          ScanSpace.lg,
           bottomInset,
         ),
         child: const Text(
           'No scans yet',
           textAlign: TextAlign.center,
           style: TextStyle(
-            fontSize: LensType.body,
-            color: LensColor.gray8,
+            fontSize: ScanType.body,
+            color: ScanColor.gray8,
             height: 1.4,
           ),
         ),
@@ -578,21 +577,21 @@ class _ScanGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
-      color: LensColor.accent,
+      color: ScanColor.accent,
       onRefresh: onRefresh,
       child: GridView.builder(
         // Reachable even when the grid is short, so the pull works.
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(
-          LensSpace.sm,
-          LensSpace.md,
-          LensSpace.sm,
+          ScanSpace.sm,
+          ScanSpace.md,
+          ScanSpace.sm,
           88 + bottomInset,
         ),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
-          crossAxisSpacing: LensSpace.xs,
-          mainAxisSpacing: LensSpace.md,
+          crossAxisSpacing: ScanSpace.xs,
+          mainAxisSpacing: ScanSpace.md,
           childAspectRatio: 1,
         ),
         itemCount: items.length,
@@ -652,14 +651,14 @@ class _ScanTile extends StatelessWidget {
   final Uint8List? thumbBytes;
   final String? filePath;
 
-  static const double _radius = LensRadius.card;
+  static const double _radius = ScanRadius.card;
   static const double _footerHeight = 32;
 
   Widget _fallback() => Center(
     child: Icon(
       isPdf ? Icons.picture_as_pdf_outlined : Icons.broken_image_outlined,
-      size: LensSize.icon,
-      color: LensColor.gray6,
+      size: ScanSize.icon,
+      color: ScanColor.gray6,
     ),
   );
 
@@ -709,7 +708,7 @@ class _ScanTile extends StatelessWidget {
             ],
           ),
           child: Material(
-            color: LensColor.gray0,
+            color: ScanColor.gray0,
             borderRadius: BorderRadius.circular(_radius),
             clipBehavior: Clip.antiAlias,
             child: Stack(
@@ -730,8 +729,8 @@ class _ScanTile extends StatelessWidget {
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: [
-                            LensColor.gray0.withValues(alpha: 0),
-                            LensColor.gray0,
+                            ScanColor.gray0.withValues(alpha: 0),
+                            ScanColor.gray0,
                           ],
                         ),
                       ),
@@ -745,15 +744,15 @@ class _ScanTile extends StatelessWidget {
                   height: _footerHeight,
                   child: Row(
                     children: [
-                      const SizedBox(width: LensSpace.xxs),
+                      const SizedBox(width: ScanSpace.xxs),
                       Expanded(
                         child: Text(
                           title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            fontSize: LensType.label,
-                            color: LensColor.gray7,
+                            fontSize: ScanType.label,
+                            color: ScanColor.gray7,
                             height: 1.2,
                           ),
                         ),
@@ -769,24 +768,24 @@ class _ScanTile extends StatelessWidget {
                           child: const Icon(
                             Icons.more_vert,
                             size: 20,
-                            color: LensColor.gray9,
+                            color: ScanColor.gray9,
                           ),
                         ),
                       ),
-                      const SizedBox(width: LensSpace.xxs),
+                      const SizedBox(width: ScanSpace.xxs),
                     ],
                   ),
                 ),
                 if (isPdf)
                   Positioned(
-                    top: LensSpace.xxs,
-                    right: LensSpace.xxs,
+                    top: ScanSpace.xxs,
+                    right: ScanSpace.xxs,
                     child: IgnorePointer(
                       child: Container(
                         width: 24,
                         height: 24,
                         decoration: const BoxDecoration(
-                          color: LensColor.gray0,
+                          color: ScanColor.gray0,
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
@@ -799,7 +798,7 @@ class _ScanTile extends StatelessWidget {
                         child: const Icon(
                           Icons.picture_as_pdf,
                           size: 14,
-                          color: LensColor.accent,
+                          color: ScanColor.accent,
                         ),
                       ),
                     ),
@@ -825,10 +824,10 @@ class _CaptureButton extends StatelessWidget {
       button: true,
       label: 'New capture',
       child: SizedBox(
-        width: LensSize.scanFab,
-        height: LensSize.scanFab,
+        width: ScanSize.scanFab,
+        height: ScanSize.scanFab,
         child: Material(
-          color: LensColor.accent,
+          color: ScanColor.accent,
           shape: const CircleBorder(),
           elevation: 3,
           shadowColor: const Color(0x40000000),
@@ -838,8 +837,8 @@ class _CaptureButton extends StatelessWidget {
             child: const Center(
               child: Icon(
                 Icons.photo_camera,
-                size: LensSize.icon,
-                color: LensColor.gray0,
+                size: ScanSize.icon,
+                color: ScanColor.gray0,
               ),
             ),
           ),

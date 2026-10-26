@@ -1,4 +1,4 @@
-/// One entry in the scan history, mirroring Office Lens's `RecentEntry`.
+/// One entry in the scan history: a saved scan.
 class ScanEntry {
   const ScanEntry({
     this.id,

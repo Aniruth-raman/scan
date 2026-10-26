@@ -6,14 +6,14 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'data/scan_repository.dart';
-import 'design/lens_theme.dart';
+import 'design/scan_theme.dart';
 import 'screens/history_screen.dart';
 import 'services/scan_exporter.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Lens is portrait-only on phones: the capture stage, crop stage and editor
+  // Scan is portrait-only on phones: the capture stage, crop stage and editor
   // are all laid out for a 384 x 832 dp viewport. Locking here keeps the
   // measured geometry valid and stops the camera preview from rotating out
   // from under the chrome.
@@ -25,15 +25,15 @@ Future<void> main() async {
   await storage.create(recursive: true);
 
   runApp(
-    LensLiteApp(
+    ScanApp(
       repository: repository,
       exporter: ScanExporter(repository: repository, storageDirectory: storage),
     ),
   );
 }
 
-class LensLiteApp extends StatelessWidget {
-  const LensLiteApp({
+class ScanApp extends StatelessWidget {
+  const ScanApp({
     super.key,
     required this.repository,
     required this.exporter,
@@ -45,11 +45,11 @@ class LensLiteApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Lens Lite',
+      title: 'Scan',
       debugShowCheckedModeBanner: false,
-      // One theme. Lens switches chrome by stage (black camera, white editor),
+      // One theme. Scan switches chrome by stage (black camera, white editor),
       // never by system brightness, so there is no dark theme to select.
-      theme: LensTheme.editor(),
+      theme: ScanTheme.editor(),
       themeMode: ThemeMode.light,
       home: HistoryScreen(repository: repository, exporter: exporter),
     );

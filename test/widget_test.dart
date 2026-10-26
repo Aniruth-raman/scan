@@ -4,16 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
-import 'package:lens_lite/data/scan_repository.dart';
-import 'package:lens_lite/models/scan_entry.dart';
-import 'package:lens_lite/screens/history_screen.dart';
-import 'package:lens_lite/services/scan_exporter.dart';
+import 'package:scan/data/scan_repository.dart';
+import 'package:scan/models/scan_entry.dart';
+import 'package:scan/screens/history_screen.dart';
+import 'package:scan/services/scan_exporter.dart';
 
 void main() {
   late Directory tempDir;
 
   setUp(() {
-    tempDir = Directory.systemTemp.createTempSync('lens_lite_widget');
+    tempDir = Directory.systemTemp.createTempSync('scan_widget');
   });
 
   tearDown(() {
@@ -93,14 +93,14 @@ void main() {
     // The image tile's overflow opens the menu; the band names the album.
     await tester.tap(find.byIcon(Icons.more_vert).first);
     await tester.pumpAndSettle();
-    expect(find.text('Phone Storage > Pictures > Lens Lite'), findsOneWidget);
+    expect(find.text('Phone Storage > Pictures > Scan'), findsOneWidget);
 
     // Dismiss and do the same for the PDF, which goes to Downloads.
     await tester.tapAt(const Offset(20, 20));
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.more_vert).last);
     await tester.pumpAndSettle();
-    expect(find.text('Phone Storage > Download > Lens Lite'), findsOneWidget);
+    expect(find.text('Phone Storage > Download > Scan'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -110,7 +110,7 @@ void main() {
     // The reference viewport, so all three tiles are on screen.
     await tester.binding.setSurfaceSize(const Size(384, 832));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    const channel = MethodChannel('lens_lite/image');
+    const channel = MethodChannel('scan/image');
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     // Gallery access is granted in this scenario, so the indexer runs.
@@ -231,7 +231,7 @@ void main() {
     messenger.setMockMethodCallHandler(permissions, (call) async => 1);
     addTearDown(() => messenger.setMockMethodCallHandler(permissions, null));
 
-    const channel = MethodChannel('lens_lite/image');
+    const channel = MethodChannel('scan/image');
     messenger.setMockMethodCallHandler(channel, (call) async {
       if (call.method != 'listShared') return null;
       // The album copy of a row saved before `sharedUri` existed. MediaStore

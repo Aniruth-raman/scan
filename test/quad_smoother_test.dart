@@ -2,8 +2,8 @@ import 'dart:math' as math;
 import 'dart:ui' show Size;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lens_lite/services/document_detector.dart';
-import 'package:lens_lite/services/quad_smoother.dart';
+import 'package:scan/services/document_detector.dart';
+import 'package:scan/services/quad_smoother.dart';
 
 /// A 480 x 640 frame, so the diagonal is 800 and `tolerance` of 0.08 is 64 px.
 const frame = Size(480, 640);

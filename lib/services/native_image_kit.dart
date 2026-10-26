@@ -51,10 +51,10 @@ enum ScanFilter {
   final String label;
 }
 
-/// The 4x5 colour matrix [LensImageKit] bakes for [filter], so the crop stage
+/// The 4x5 colour matrix [ScanImageKit] bakes for [filter], so the crop stage
 /// can preview the exact tone that will be written into the page.
 ///
-/// Mirrors `filterFor()` in `LensImageKit.kt`, including Android's
+/// Mirrors `filterFor()` in `ScanImageKit.kt`, including Android's
 /// `ColorMatrix.postConcat` order: values are row-major, the fifth column is a
 /// 0-255 translation, and `enhance` is the contrast matrix applied *after* the
 /// saturation lift.
@@ -151,14 +151,14 @@ class SharedMedia {
 /// Optionally-published result: where the shared copy landed.
 typedef PublishedFile = ({String uri, String name, String location});
 
-/// Thin bridge to [LensImageKit] on the Android side.
+/// Thin bridge to [ScanImageKit] on the Android side.
 ///
 /// Decoding, EXIF orientation, perspective rectification, tone mapping, JPEG
 /// encoding and PDF assembly are all platform work. Dart never holds a
 /// full-resolution pixel buffer, which is what keeps previews crisp and the
 /// isolate heap small.
 abstract final class NativeImageKit {
-  static const MethodChannel _channel = MethodChannel('lens_lite/image');
+  static const MethodChannel _channel = MethodChannel('scan/image');
 
   static bool get isSupported =>
       defaultTargetPlatform == TargetPlatform.android;
@@ -264,7 +264,7 @@ abstract final class NativeImageKit {
   static Future<PublishedFile> publishImage(
     Uint8List bytes, {
     required String name,
-    String folder = 'Lens Lite',
+    String folder = 'Scan',
   }) async {
     _requireAndroid();
     final result = await _channel.invokeMapMethod<String, dynamic>(
@@ -309,7 +309,7 @@ abstract final class NativeImageKit {
   }
 
   /// Publishes a full-bleed multi-page PDF into shared Downloads and returns
-  /// where it landed: the collection (`Download/Lens Lite`) and the file name.
+  /// where it landed: the collection (`Download/Scan`) and the file name.
   ///
   /// [recordPath] additionally receives the same bytes, so the app keeps its own
   /// copy to list and open; the shared copy is the export.
@@ -317,7 +317,7 @@ abstract final class NativeImageKit {
     required List<Uint8List> pages,
     required String name,
     required String recordPath,
-    String folder = 'Lens Lite',
+    String folder = 'Scan',
   }) async {
     _requireAndroid();
     final result = await _channel.invokeMapMethod<String, dynamic>('writePdf', {

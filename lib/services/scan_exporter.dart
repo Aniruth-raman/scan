@@ -28,10 +28,10 @@ class ScanExporter {
 
   /// `Download/<folder>` on the platform side, shared so any file manager can
   /// reach the exported document.
-  static const pdfFolder = 'Lens Lite';
+  static const pdfFolder = 'Scan';
 
   /// `Pictures/<folder>` on the platform side, the gallery album.
-  static const imageFolder = 'Lens Lite';
+  static const imageFolder = 'Scan';
 
   /// Default file name, matching the original's date-based naming.
   static String defaultTitle(DateTime when) =>
@@ -87,9 +87,9 @@ class ScanExporter {
   }
 
   /// Writes one PDF for [pages] named after [title] in two places: a record in
-  /// app storage (the tile) and a copy in `Download/Lens Lite`.
+  /// app storage (the tile) and a copy in `Download/Scan`.
   ///
-  /// Returns the export's location (`Download/Lens Lite/<title>.pdf`).
+  /// Returns the export's location (`Download/Scan/<title>.pdf`).
   Future<String> savePdf(List<Uint8List> pages, {required String title}) async {
     if (pages.isEmpty) {
       throw ArgumentError.value(pages, 'pages', 'must not be empty');

@@ -4,8 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
-import 'package:lens_lite/data/scan_repository.dart';
-import 'package:lens_lite/services/scan_exporter.dart';
+import 'package:scan/data/scan_repository.dart';
+import 'package:scan/services/scan_exporter.dart';
 import 'package:path/path.dart' as p;
 
 Uint8List fakeJpeg() {
@@ -13,13 +13,13 @@ Uint8List fakeJpeg() {
   return Uint8List.fromList(img.encodeJpg(image));
 }
 
-/// PDF assembly, publishing and thumbnailing live in `LensImageKit` on the
+/// PDF assembly, publishing and thumbnailing live in `ScanImageKit` on the
 /// Android side. The unit tests stand in for the platform with a channel mock
 /// so the bookkeeping this class actually owns stays covered.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const channel = MethodChannel('lens_lite/image');
+  const channel = MethodChannel('scan/image');
   late Directory tempDir;
   late InMemoryScanRepository repository;
   late ScanExporter exporter;
@@ -37,7 +37,7 @@ void main() {
   });
 
   setUp(() {
-    tempDir = Directory.systemTemp.createTempSync('lens_lite_export');
+    tempDir = Directory.systemTemp.createTempSync('scan_export');
     repository = InMemoryScanRepository();
     exporter = ScanExporter(repository: repository, storageDirectory: tempDir);
     pdfCalls = <Map<Object?, Object?>>[];
@@ -111,7 +111,7 @@ void main() {
     // The gallery copy is published by us, so the entry remembers its URI.
     expect(entry.sharedUri, 'content://media/external/images/media/My capture');
     expect(imageCalls.single['name'], 'My capture');
-    expect(imageCalls.single['folder'], 'Lens Lite');
+    expect(imageCalls.single['folder'], 'Scan');
 
     final history = await repository.all();
     expect(history, hasLength(1));
@@ -141,11 +141,11 @@ void main() {
     final pages = <Uint8List>[fakeJpeg(), fakeJpeg(), fakeJpeg()];
     final path = await exporter.savePdf(pages, title: 'Three pages');
 
-    expect(path, 'Download/Lens Lite/Three pages.pdf');
+    expect(path, 'Download/Scan/Three pages.pdf');
     expect(pdfCalls, hasLength(1));
     expect((pdfCalls.single['pages'] as List).length, 3);
     expect(pdfCalls.single['name'], 'Three pages');
-    expect(pdfCalls.single['folder'], 'Lens Lite');
+    expect(pdfCalls.single['folder'], 'Scan');
 
     final scans = await repository.all();
     expect(scans, hasLength(1));
@@ -174,7 +174,7 @@ void main() {
       'Report (2).pdf',
     });
     // The export keeps the plain name; MediaStore dedupes its own copies.
-    expect(second, 'Download/Lens Lite/Report.pdf');
+    expect(second, 'Download/Scan/Report.pdf');
   });
 
   test('savePdf rejects an empty page list', () {

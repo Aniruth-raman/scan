@@ -1,45 +1,44 @@
 import 'package:flutter/material.dart';
 
-import 'lens_tokens.dart';
+import 'scan_tokens.dart';
 
-/// Theme construction for the two Lens stages.
+/// Theme construction for the two stages.
 ///
 /// The colour scheme is written out explicitly rather than generated with
-/// `ColorScheme.fromSeed`. Seeding a Material 3 tonal palette from
-/// `#D83B01` desaturates the accent and invents a surface ramp that Lens does
-/// not have — that is exactly how the previous build ended up looking generic.
-abstract final class LensTheme {
+/// `ColorScheme.fromSeed`: seeding a Material 3 tonal palette invents a
+/// surface ramp the design does not have and softens the accent.
+abstract final class ScanTheme {
   /// List and editor stage: white surface, dark text.
-  static ThemeData editor() => _build(LensChrome.light);
+  static ThemeData editor() => _build(ScanChrome.light);
 
   /// Capture and crop stage: black surface, light text.
-  static ThemeData capture() => _build(LensChrome.dark);
+  static ThemeData capture() => _build(ScanChrome.dark);
 
-  static ThemeData _build(LensChrome chrome) {
+  static ThemeData _build(ScanChrome chrome) {
     final scheme = ColorScheme(
       brightness: Brightness.light,
-      primary: LensColor.accent,
-      // Lens renders hero-button content black on accent, not white.
-      onPrimary: LensColor.gray11,
-      primaryContainer: LensColor.accent,
-      onPrimaryContainer: LensColor.gray11,
-      secondary: LensColor.gray10,
-      onSecondary: LensColor.gray0,
-      secondaryContainer: LensColor.gray2,
-      onSecondaryContainer: LensColor.gray10,
-      error: LensColor.danger,
-      onError: LensColor.gray0,
+      primary: ScanColor.accent,
+      // Hero-button content is white on the accent.
+      onPrimary: ScanColor.gray0,
+      primaryContainer: ScanColor.accent,
+      onPrimaryContainer: ScanColor.gray11,
+      secondary: ScanColor.gray10,
+      onSecondary: ScanColor.gray0,
+      secondaryContainer: ScanColor.gray2,
+      onSecondaryContainer: ScanColor.gray10,
+      error: ScanColor.danger,
+      onError: ScanColor.gray0,
       surface: chrome.background,
       onSurface: chrome.foreground,
-      surfaceContainerHighest: LensColor.gray2,
+      surfaceContainerHighest: ScanColor.gray2,
       onSurfaceVariant: chrome.secondary,
-      outline: LensColor.gray5,
+      outline: ScanColor.gray5,
       outlineVariant: chrome.divider,
-      shadow: LensColor.gray11,
-      scrim: LensColor.gray11,
-      inverseSurface: LensColor.gray10,
-      onInverseSurface: LensColor.gray0,
-      inversePrimary: LensColor.accentAlt,
+      shadow: ScanColor.gray11,
+      scrim: ScanColor.gray11,
+      inverseSurface: ScanColor.gray10,
+      onInverseSurface: ScanColor.gray0,
+      inversePrimary: ScanColor.accentLight,
     );
 
     final text = _text(chrome);
@@ -52,9 +51,9 @@ abstract final class LensTheme {
       dividerColor: chrome.divider,
       textTheme: text,
       primaryTextTheme: text,
-      iconTheme: IconThemeData(color: chrome.foreground, size: LensSize.icon),
+      iconTheme: IconThemeData(color: chrome.foreground, size: ScanSize.icon),
       splashFactory: InkRipple.splashFactory,
-      // Lens is a 48 dp app; do not let Material compact it.
+      // Scan is a 48 dp app; do not let Material compact it.
       visualDensity: VisualDensity.standard,
       materialTapTargetSize: MaterialTapTargetSize.padded,
       appBarTheme: AppBarTheme(
@@ -67,11 +66,11 @@ abstract final class LensTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        backgroundColor: LensColor.gray10,
-        contentTextStyle: text.bodyMedium?.copyWith(color: LensColor.gray0),
-        insetPadding: const EdgeInsets.all(LensSpace.md),
+        backgroundColor: ScanColor.gray10,
+        contentTextStyle: text.bodyMedium?.copyWith(color: ScanColor.gray0),
+        insetPadding: const EdgeInsets.all(ScanSpace.md),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(LensRadius.hero),
+          borderRadius: BorderRadius.circular(ScanRadius.hero),
         ),
       ),
       dividerTheme: DividerThemeData(
@@ -80,7 +79,7 @@ abstract final class LensTheme {
         space: 1,
       ),
       progressIndicatorTheme: const ProgressIndicatorThemeData(
-        color: LensColor.accent,
+        color: ScanColor.accent,
       ),
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {TargetPlatform.android: ZoomPageTransitionsBuilder()},
@@ -88,56 +87,55 @@ abstract final class LensTheme {
     );
   }
 
-  /// Roboto is Flutter's default on Android and is also what Lens uses
-  /// (`sans-serif` / `sans-serif-medium`), so no font asset is shipped.
-  static TextTheme _text(LensChrome chrome) {
+  /// Roboto is Flutter's default on Android, so no font asset is shipped.
+  static TextTheme _text(ScanChrome chrome) {
     final fg = chrome.foreground;
     final secondary = chrome.secondary;
 
     return TextTheme(
       // 20 sp — sheet headers ("Save as").
       titleLarge: TextStyle(
-        fontSize: LensType.sheet,
+        fontSize: ScanType.sheet,
         fontWeight: FontWeight.w500,
         color: fg,
         height: 1.3,
       ),
       // 17 sp — app-bar titles ("My Scans").
       titleMedium: TextStyle(
-        fontSize: LensType.appBar,
+        fontSize: ScanType.appBar,
         fontWeight: FontWeight.w500,
         color: fg,
         height: 1.3,
       ),
       titleSmall: TextStyle(
-        fontSize: LensType.body,
+        fontSize: ScanType.body,
         fontWeight: FontWeight.w500,
         color: fg,
         height: 1.3,
       ),
       // 14 sp — hero labels, tabs, tray labels.
-      bodyLarge: TextStyle(fontSize: LensType.body, color: fg, height: 1.4),
-      bodyMedium: TextStyle(fontSize: LensType.body, color: fg, height: 1.4),
+      bodyLarge: TextStyle(fontSize: ScanType.body, color: fg, height: 1.4),
+      bodyMedium: TextStyle(fontSize: ScanType.body, color: fg, height: 1.4),
       // 12 sp — card footers, carousel.
       bodySmall: TextStyle(
-        fontSize: LensType.label,
+        fontSize: ScanType.label,
         color: secondary,
         height: 1.35,
       ),
       labelLarge: TextStyle(
-        fontSize: LensType.body,
+        fontSize: ScanType.body,
         fontWeight: FontWeight.w500,
         color: fg,
         height: 1.2,
       ),
       labelMedium: TextStyle(
-        fontSize: LensType.label,
+        fontSize: ScanType.label,
         fontWeight: FontWeight.w500,
         color: fg,
         height: 1.2,
       ),
       labelSmall: TextStyle(
-        fontSize: LensType.micro,
+        fontSize: ScanType.micro,
         fontWeight: FontWeight.w500,
         color: secondary,
         height: 1.2,
@@ -147,11 +145,11 @@ abstract final class LensTheme {
 }
 
 /// Named text styles for the custom chrome widgets, which cannot rely on
-/// `Theme.of(context).textTheme` alone for the exact tracking Lens uses.
-abstract final class LensText {
+/// `Theme.of(context).textTheme` alone for the exact tracking the design needs.
+abstract final class ScanText {
   /// App-bar title: 17 sp medium.
   static TextStyle appBar(Color color) => TextStyle(
-    fontSize: LensType.appBar,
+    fontSize: ScanType.appBar,
     fontWeight: FontWeight.w500,
     color: color,
     height: 1.3,
@@ -159,7 +157,7 @@ abstract final class LensText {
 
   /// Sheet header: 20 sp medium.
   static TextStyle sheet(Color color) => TextStyle(
-    fontSize: LensType.sheet,
+    fontSize: ScanType.sheet,
     fontWeight: FontWeight.w500,
     color: color,
     height: 1.3,
@@ -167,7 +165,7 @@ abstract final class LensText {
 
   /// Hero/pill label: 14 sp medium.
   static TextStyle hero(Color color) => TextStyle(
-    fontSize: LensType.body,
+    fontSize: ScanType.body,
     fontWeight: FontWeight.w500,
     color: color,
     height: 1.2,
@@ -175,23 +173,23 @@ abstract final class LensText {
 
   /// Mode carousel: uppercase, tracked, 12 sp. The signature cue.
   static TextStyle carousel(Color color, {bool selected = false}) => TextStyle(
-    fontSize: LensType.label,
+    fontSize: ScanType.label,
     fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
-    letterSpacing: LensType.carouselTracking,
+    letterSpacing: ScanType.carouselTracking,
     color: color,
     height: 1.2,
   );
 
   /// Card footer title: 12 sp.
   static TextStyle cardTitle(Color color) => TextStyle(
-    fontSize: LensType.label,
+    fontSize: ScanType.label,
     fontWeight: FontWeight.w400,
     color: color,
     height: 1.2,
   );
 
   static TextStyle caption(Color color) => TextStyle(
-    fontSize: LensType.micro,
+    fontSize: ScanType.micro,
     fontWeight: FontWeight.w400,
     color: color,
     height: 1.2,

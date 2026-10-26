@@ -5,10 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
-import 'package:lens_lite/data/scan_repository.dart';
-import 'package:lens_lite/design/lens_tokens.dart';
-import 'package:lens_lite/screens/review_screen.dart';
-import 'package:lens_lite/services/scan_exporter.dart';
+import 'package:scan/data/scan_repository.dart';
+import 'package:scan/design/scan_tokens.dart';
+import 'package:scan/screens/review_screen.dart';
+import 'package:scan/services/scan_exporter.dart';
 import 'package:path/path.dart' as p;
 
 Uint8List fakeJpeg({int width = 320, int height = 240}) {
@@ -22,7 +22,7 @@ Uint8List fakeJpeg({int width = 320, int height = 240}) {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const imageChannel = MethodChannel('lens_lite/image');
+  const imageChannel = MethodChannel('scan/image');
 
   late Directory tempDir;
   late ScanExporter exporter;
@@ -32,7 +32,7 @@ void main() {
   late bool publishFails;
 
   setUp(() {
-    tempDir = Directory.systemTemp.createTempSync('lens_lite_review');
+    tempDir = Directory.systemTemp.createTempSync('scan_review');
     repository = InMemoryScanRepository();
     exporter = ScanExporter(repository: repository, storageDirectory: tempDir);
     nativeCalls = <String>[];
@@ -59,7 +59,7 @@ void main() {
         case 'publishImage':
           if (publishFails) {
             throw PlatformException(
-              code: 'lens_image_kit',
+              code: 'scan_image_kit',
               message: 'no space',
             );
           }
@@ -68,7 +68,7 @@ void main() {
           return <String, dynamic>{
             'uri': 'content://media/external/images/media/$imageName',
             'name': '$imageName.jpg',
-            'location': 'Pictures/Lens Lite',
+            'location': 'Pictures/Scan',
           };
         case 'writePdf':
           final arguments = call.arguments as Map<Object?, Object?>;
@@ -158,7 +158,7 @@ void main() {
     // a 48 dp container that sits 20 dp above the screen edge.
     final pill = tester.getRect(
       find.byWidgetPredicate(
-        (widget) => widget is Material && widget.color == LensColor.accent,
+        (widget) => widget is Material && widget.color == ScanColor.accent,
       ),
     );
     expect(pill.width, closeTo(344, 0.5));
@@ -173,7 +173,7 @@ void main() {
             widget is DecoratedBox &&
             widget.decoration is BoxDecoration &&
             (widget.decoration as BoxDecoration).color ==
-                LensColor.editorTrayFill,
+                ScanColor.editorTrayFill,
       ),
     );
     expect(tray.width, closeTo(48, 0.5));
@@ -366,10 +366,10 @@ void main() {
 
       expect(pdfCalls, hasLength(1));
       expect(pdfCalls.single['name'], 'Q4 report');
-      expect(pdfCalls.single['folder'], 'Lens Lite');
+      expect(pdfCalls.single['folder'], 'Scan');
       expect(
         result?.message,
-        'Saved to Gallery · PDF: Download/Lens Lite/Q4 report.pdf',
+        'Saved to Gallery · PDF: Download/Scan/Q4 report.pdf',
       );
 
       // Both targets produce their own record, like the original: a JPEG tile
@@ -412,7 +412,7 @@ void main() {
       final scans = await repository.all();
       expect(scans, hasLength(1));
       expect(scans.single.isPdf, isTrue);
-      expect(result?.message, 'PDF: Download/Lens Lite/Q4 report.pdf');
+      expect(result?.message, 'PDF: Download/Scan/Q4 report.pdf');
     });
   });
 }

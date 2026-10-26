@@ -1,4 +1,4 @@
-package com.example.lens_lite
+package com.aniruth.scan
 
 import android.content.ContentUris
 import android.content.ContentValues
@@ -48,7 +48,7 @@ import kotlin.math.sqrt
  * All methods run on a single background executor so the platform thread stays
  * free, and replies are posted back to the main looper.
  */
-class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandler {
+class ScanImageKit(private val context: Context) : MethodChannel.MethodCallHandler {
 
     private val executor = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
@@ -72,7 +72,7 @@ class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandl
             } catch (t: Throwable) {
                 main.post {
                     result.error(
-                        if (t is StoragePermissionRequired) "storage_permission" else "lens_image_kit",
+                        if (t is StoragePermissionRequired) "storage_permission" else "scan_image_kit",
                         t.message ?: t.javaClass.simpleName,
                         null
                     )
@@ -122,7 +122,7 @@ class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandl
         val bytes = call.argument<ByteArray>("bytes")
             ?: throw IllegalArgumentException("bytes required")
         val name = call.argument<String>("name")?.takeIf { it.isNotBlank() } ?: "Scan"
-        val folder = call.argument<String>("folder")?.takeIf { it.isNotBlank() } ?: "Lens Lite"
+        val folder = call.argument<String>("folder")?.takeIf { it.isNotBlank() } ?: SHARED_FOLDER
         return publish(
             bytes = bytes,
             displayName = "$name.jpg",
@@ -497,7 +497,7 @@ class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandl
         val pages = call.argument<List<ByteArray>>("pages")
             ?: throw IllegalArgumentException("pages required")
         val name = call.argument<String>("name")?.takeIf { it.isNotBlank() } ?: "Scan"
-        val folder = call.argument<String>("folder")?.takeIf { it.isNotBlank() } ?: "Lens Lite"
+        val folder = call.argument<String>("folder")?.takeIf { it.isNotBlank() } ?: SHARED_FOLDER
         val recordPath = call.argument<String>("recordPath")?.takeIf { it.isNotBlank() }
         if (pages.isEmpty()) throw IllegalArgumentException("pages must not be empty")
 
@@ -857,12 +857,12 @@ class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandl
         const val A4_WIDTH_PT = 595
 
         /** The one folder the app writes to, in both Pictures and Download. */
-        const val SHARED_FOLDER = "Lens Lite"
+        const val SHARED_FOLDER = "Scan"
 
         /** Long edge of the preview published for an indexed image. */
         const val THUMB_EDGE = 240
 
         /** Must match the FileProvider authority declared in AndroidManifest.xml. */
-        const val FILE_PROVIDER_SUFFIX = ".lensfileprovider"
+        const val FILE_PROVIDER_SUFFIX = ".scanfileprovider"
     }
 }

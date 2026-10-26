@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lens_lite/services/document_detector.dart';
+import 'package:scan/services/document_detector.dart';
 
 /// Splits an edge into [count] short segments, the way M-LSD reports a straight
 /// border as many small pieces that the merge step has to collapse back into

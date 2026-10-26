@@ -12,7 +12,7 @@ configurations.all {
 }
 
 android {
-    namespace = "com.example.lens_lite"
+    namespace = "com.aniruth.scan"
     // permission_handler_android requires compiling against SDK 37 or later.
     compileSdk = 37
     ndkVersion = flutter.ndkVersion
@@ -32,7 +32,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.lens_lite"
+        applicationId = "com.aniruth.scan"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

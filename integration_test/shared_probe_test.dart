@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:lens_lite/services/native_image_kit.dart';
+import 'package:scan/services/native_image_kit.dart';
 
 /// Diagnostic: what does the folder indexer actually see on this device?
 void main() {

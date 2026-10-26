@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 
-import 'lens_tokens.dart';
+import 'scan_tokens.dart';
 
 /// The 40 dp accent pill — the app's only primary-action shape.
 ///
 /// Press-scale and the busy state live here so the crop stage and the review
 /// stage cannot drift apart: both hand off through the same control.
-class LensHeroButton extends StatefulWidget {
-  const LensHeroButton({
+class ScanHeroButton extends StatefulWidget {
+  const ScanHeroButton({
     super.key,
     required this.label,
     required this.onTap,
@@ -31,10 +31,10 @@ class LensHeroButton extends StatefulWidget {
   final Widget? trailing;
 
   @override
-  State<LensHeroButton> createState() => _LensHeroButtonState();
+  State<ScanHeroButton> createState() => _ScanHeroButtonState();
 }
 
-class _LensHeroButtonState extends State<LensHeroButton> {
+class _ScanHeroButtonState extends State<ScanHeroButton> {
   bool _pressed = false;
 
   String get _label =>
@@ -49,13 +49,13 @@ class _LensHeroButtonState extends State<LensHeroButton> {
       label: widget.label,
       child: AnimatedScale(
         scale: _pressed ? 0.98 : 1,
-        duration: LensMotion.fast,
-        curve: LensMotion.curve,
+        duration: ScanMotion.fast,
+        curve: ScanMotion.curve,
         child: SizedBox(
-          height: LensSize.heroHeight,
+          height: ScanSize.heroHeight,
           child: Material(
-            color: enabled ? LensColor.accent : LensColor.disabled,
-            borderRadius: BorderRadius.circular(LensRadius.hero),
+            color: enabled ? ScanColor.accent : ScanColor.disabled,
+            borderRadius: BorderRadius.circular(ScanRadius.hero),
             clipBehavior: Clip.antiAlias,
             child: InkWell(
               // The pill itself owns the press, so the scale never fights the
@@ -74,30 +74,30 @@ class _LensHeroButtonState extends State<LensHeroButton> {
                   children: [
                     if (widget.busy)
                       const Padding(
-                        padding: EdgeInsets.only(right: LensSpace.xs),
+                        padding: EdgeInsets.only(right: ScanSpace.xs),
                         child: SizedBox(
-                          width: LensSize.iconSmall,
-                          height: LensSize.iconSmall,
+                          width: ScanSize.iconSmall,
+                          height: ScanSize.iconSmall,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: LensColor.gray11,
+                            color: ScanColor.gray0,
                           ),
                         ),
                       )
                     else if (widget.leading != null) ...[
                       widget.leading!,
-                      const SizedBox(width: LensSpace.xs),
+                      const SizedBox(width: ScanSpace.xs),
                     ],
                     Text(
                       _label,
                       style: const TextStyle(
-                        fontSize: LensType.body,
+                        fontSize: ScanType.body,
                         fontWeight: FontWeight.w500,
-                        color: LensColor.gray11,
+                        color: ScanColor.gray0,
                       ),
                     ),
                     if (!widget.busy && widget.trailing != null) ...[
-                      const SizedBox(width: LensSpace.xs),
+                      const SizedBox(width: ScanSpace.xs),
                       widget.trailing!,
                     ],
                   ],

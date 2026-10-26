@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The app's one colour: the shutter mark and every accent in the UI. -->
+    <color name="ic_launcher_background">#0B57D0</color>
+</resources>

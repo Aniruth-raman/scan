@@ -12,11 +12,11 @@ import 'document_detector.dart';
 /// So the drawn quad is filtered in two stages:
 ///
 ///  * **confirm** — a new outline only becomes the target once it repeats, i.e.
-///    two consecutive detections agree within [tolerance]. Two candidates that
-///    alternate frame by frame never agree with themselves, so neither becomes
-///    the target and the outline holds still.
+/// two consecutive detections agree within [tolerance]. Two candidates that
+/// alternate frame by frame never agree with themselves, so neither becomes
+/// the target and the outline holds still.
 ///  * **follow** — the drawn quad eases toward the target by [follow] per frame,
-///    which turns small per-frame noise into a slow drift instead of a shake.
+/// which turns small per-frame noise into a slow drift instead of a shake.
 ///
 /// A short run of misses does not clear the outline ([releaseFrames]), so a
 /// single dropped frame does not make it blink.

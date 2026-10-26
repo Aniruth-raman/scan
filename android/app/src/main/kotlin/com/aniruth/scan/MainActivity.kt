@@ -1,4 +1,4 @@
-package com.example.lens_lite
+package com.aniruth.scan
 
 import android.os.Build
 import android.os.Bundle
@@ -24,10 +24,10 @@ class MainActivity : FlutterActivity() {
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             IMAGE_CHANNEL
-        ).setMethodCallHandler(LensImageKit(applicationContext))
+        ).setMethodCallHandler(ScanImageKit(applicationContext))
     }
 
     companion object {
-        const val IMAGE_CHANNEL = "lens_lite/image"
+        const val IMAGE_CHANNEL = "scan/image"
     }
 }

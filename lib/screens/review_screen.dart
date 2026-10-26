@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../design/lens_hero_button.dart';
-import '../design/lens_tokens.dart';
+import '../design/scan_hero_button.dart';
+import '../design/scan_tokens.dart';
 import '../services/native_image_kit.dart';
 import '../services/scan_exporter.dart';
 import 'adjust_screen.dart';
@@ -44,16 +44,15 @@ class ReviewResult {
 /// Geometry is measured from `ui-edit.xml` and `postcapture_collection_view_k2.xml`
 /// on the 384 x 832 dp reference viewport:
 ///
-///  - 48 dp top bar (`guideline_top_margin`): 48 dp back target at 12 dp, and
+/// 48 dp top bar (`guideline_top_margin`): 48 dp back target at 12 dp, and
 ///    "Options" flush to the end edge at 14 sp / 16 dp padding.
-///  - pager inset 16 dp, vertically centred.
-///  - feature tray 48 x 193 dp, 12 dp from the end edge, centred on the content
-///    column (`topFeatureTrayContainer` is constrained top and bottom).
-///  - bottom navigation: 12 dp padding, a 58 dp action row of three 120 dp
-///    cells, then a 48 dp container holding the 344 x 40 dp Finish pill.
+/// pager inset 16 dp, vertically centred.
+/// feature tray 48 x 193 dp, 12 dp from the end edge, centred on the content
+/// column (`topFeatureTrayContainer` is constrained top and bottom).
+/// bottom navigation: 12 dp padding, a 58 dp action row of three 120 dp
+/// cells, then a 48 dp container holding the 344 x 40 dp Finish pill.
 ///
-/// Unlike the earlier build this stage is black, not white: the original's root
-/// is `@color/lenshvc_black` and `lens-state5.png` shows black chrome.
+/// This stage is black, not white: capture and crop chrome are black in every
 class ReviewScreen extends StatefulWidget {
   const ReviewScreen({super.key, required this.pages, required this.exporter});
 
@@ -289,14 +288,14 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   /// Every review sheet is the same white drawer: 16 dp top corners, a
   /// 36 x 4 dp handle, a 20 sp header, and a 160 dp peek
-  /// (`lenshvc_bottomsheet_peak_height` on the reference viewport) that expands
+  /// ( on the reference viewport) that expands
   /// to 90 % of the screen when dragged.
   ///
   /// The peek is measured above the system navigation bar, the way the original
   /// measures it from its own window bottom.
   Future<T?> _openSheet<T>(
     Widget Function(BuildContext, ScrollController) builder, {
-    double peek = LensSize.sheetPeek,
+    double peek = ScanSize.sheetPeek,
   }) {
     final media = MediaQuery.of(context);
     // The modal sheet's box excludes the top safe area; the peek has to be a
@@ -306,13 +305,13 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final fraction = ((peek + inset) / available).clamp(0.1, 0.9);
     return showModalBottomSheet<T>(
       context: context,
-      backgroundColor: LensColor.gray0,
+      backgroundColor: ScanColor.gray0,
       elevation: 0,
       isScrollControlled: true,
       useSafeArea: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
-          top: Radius.circular(LensRadius.tray),
+          top: Radius.circular(ScanRadius.tray),
         ),
       ),
       builder: (sheetContext) => DraggableScrollableSheet(
@@ -342,7 +341,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
         systemNavigationBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor: LensColor.stageBlack,
+        backgroundColor: ScanColor.stageBlack,
         body: Column(
           children: [
             SizedBox(height: padding.top),
@@ -369,11 +368,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   Widget _buildTopBar() {
     return SizedBox(
-      height: LensSize.editorBarHeight,
+      height: ScanSize.editorBarHeight,
       child: Stack(
         children: [
           Positioned(
-            left: LensSpace.sm,
+            left: ScanSpace.sm,
             top: 0,
             bottom: 0,
             child: Center(
@@ -381,15 +380,15 @@ class _ReviewScreenState extends State<ReviewScreen> {
                 button: true,
                 label: 'Back to capture',
                 child: SizedBox(
-                  width: LensSize.touch,
-                  height: LensSize.touch,
+                  width: ScanSize.touch,
+                  height: ScanSize.touch,
                   child: InkResponse(
                     radius: 24,
                     onTap: () => Navigator.pop(context),
                     child: const Icon(
                       Icons.arrow_back,
-                      size: LensSize.icon,
-                      color: LensColor.gray0,
+                      size: ScanSize.icon,
+                      color: ScanColor.gray0,
                     ),
                   ),
                 ),
@@ -404,28 +403,28 @@ class _ReviewScreenState extends State<ReviewScreen> {
               bottom: 0,
               child: Center(
                 child: Semantics(
-                  // `lenshvc_CollectionViewPageNumber`: min 37 x 28 dp, 4 dp
-                  // radius, 12 sp white on `lenshvc_page_number_background`.
+                  // : min 37 x 28 dp, 4 dp
+                  // radius, 12 sp white on .
                   label: 'Page ${_index + 1} of ${_pages.length}',
                   excludeSemantics: true,
                   child: Container(
                     constraints: const BoxConstraints(
-                      minWidth: LensSize.pageNumberWidth,
+                      minWidth: ScanSize.pageNumberWidth,
                     ),
-                    height: LensSize.pageNumberHeight,
+                    height: ScanSize.pageNumberHeight,
                     padding: const EdgeInsets.symmetric(
-                      horizontal: LensSpace.xs,
+                      horizontal: ScanSpace.xs,
                     ),
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: LensColor.pageNumberFill,
-                      borderRadius: BorderRadius.circular(LensRadius.card),
+                      color: ScanColor.pageNumberFill,
+                      borderRadius: BorderRadius.circular(ScanRadius.card),
                     ),
                     child: Text(
                       '${_index + 1}/${_pages.length}',
                       style: const TextStyle(
-                        fontSize: LensType.label,
-                        color: LensColor.gray0,
+                        fontSize: ScanType.label,
+                        color: ScanColor.gray0,
                         height: 1,
                       ),
                     ),
@@ -443,18 +442,18 @@ class _ReviewScreenState extends State<ReviewScreen> {
                 label: 'Options',
                 child: InkWell(
                   onTap: _busy ? null : _openOptions,
-                  // `lenshvc_pill_button_text_size` + 16 dp / 5.5 dp padding,
+                  //  + 16 dp / 5.5 dp padding,
                   // flush to the end edge exactly as measured.
                   child: const Padding(
                     padding: EdgeInsets.symmetric(
-                      horizontal: LensSpace.md,
+                      horizontal: ScanSpace.md,
                       vertical: 5.5,
                     ),
                     child: Text(
                       'Options',
                       style: TextStyle(
-                        fontSize: LensType.body,
-                        color: LensColor.editorText,
+                        fontSize: ScanType.body,
+                        color: ScanColor.editorText,
                       ),
                     ),
                   ),
@@ -477,7 +476,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
         return InteractiveViewer(
           maxScale: 6,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: LensSpace.md),
+            padding: const EdgeInsets.symmetric(horizontal: ScanSpace.md),
             child: Center(
               child: ColorFiltered(
                 colorFilter: ColorFilter.matrix(colorMatrixFor(page.filter)),
@@ -502,7 +501,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
   /// column above the bottom bar.
   Widget _buildTray() {
     return Positioned(
-      right: LensSpace.sm,
+      right: ScanSpace.sm,
       top: 0,
       bottom: 0,
       child: Center(
@@ -510,9 +509,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
         // 48 x 192 dp plate by the 1 dp stroke.
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: LensColor.editorTrayFill,
-            borderRadius: BorderRadius.circular(LensRadius.tray),
-            border: Border.all(color: LensColor.trayStroke),
+            color: ScanColor.editorTrayFill,
+            borderRadius: BorderRadius.circular(ScanRadius.tray),
+            border: Border.all(color: ScanColor.trayStroke),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -546,12 +545,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   Widget _buildBottomBar() {
     return Padding(
-      padding: const EdgeInsets.all(LensSize.editorNavPadding),
+      padding: const EdgeInsets.all(ScanSize.editorNavPadding),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(
-            height: LensSize.actionRow,
+            height: ScanSize.actionRow,
             child: Row(
               children: [
                 _ActionCell(
@@ -572,27 +571,27 @@ class _ReviewScreenState extends State<ReviewScreen> {
               ],
             ),
           ),
-          const SizedBox(height: LensSpace.xs),
+          const SizedBox(height: ScanSpace.xs),
           SizedBox(
-            height: LensSize.touch,
+            height: ScanSize.touch,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: LensSpace.xs),
+              padding: const EdgeInsets.symmetric(horizontal: ScanSpace.xs),
               child: Center(
-                child: LensHeroButton(
+                child: ScanHeroButton(
                   label: 'Finish',
                   busy: _busy,
                   busyLabel: 'Saving…',
                   leading: const Icon(
                     Icons.check,
-                    size: LensSize.icon,
-                    color: LensColor.gray11,
+                    size: ScanSize.icon,
+                    color: ScanColor.gray11,
                   ),
                   onTap: _finish,
                 ),
               ),
             ),
           ),
-          const SizedBox(height: LensSpace.xs),
+          const SizedBox(height: ScanSpace.xs),
         ],
       ),
     );
@@ -620,16 +619,16 @@ class _TrayAction extends StatelessWidget {
       enabled: enabled,
       label: label,
       child: SizedBox(
-        width: LensSize.editorTrayWidth,
+        width: ScanSize.editorTrayWidth,
         height: 48,
         child: InkResponse(
           onTap: onTap,
           child: Icon(
             icon,
-            size: LensSize.icon,
+            size: ScanSize.icon,
             color: enabled
-                ? LensColor.gray0
-                : LensColor.gray0.withValues(alpha: 0.38),
+                ? ScanColor.gray0
+                : ScanColor.gray0.withValues(alpha: 0.38),
           ),
         ),
       ),
@@ -653,7 +652,7 @@ class _ActionCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final enabled = onTap != null;
-    final tint = enabled ? LensColor.editorIcon : LensColor.editorDisabled;
+    final tint = enabled ? ScanColor.editorIcon : ScanColor.editorDisabled;
     return Expanded(
       child: Center(
         child: Semantics(
@@ -661,23 +660,23 @@ class _ActionCell extends StatelessWidget {
           enabled: enabled,
           label: label,
           child: SizedBox(
-            width: LensSize.touch,
-            height: LensSize.actionRow,
+            width: ScanSize.touch,
+            height: ScanSize.actionRow,
             child: InkResponse(
               onTap: onTap,
               child: Column(
                 children: [
                   const SizedBox(height: 10),
-                  Icon(icon, size: LensSize.icon, color: tint),
-                  const SizedBox(height: LensSpace.xs),
+                  Icon(icon, size: ScanSize.icon, color: tint),
+                  const SizedBox(height: ScanSpace.xs),
                   Text(
                     label,
                     maxLines: 1,
                     style: TextStyle(
-                      fontSize: LensType.label,
+                      fontSize: ScanType.label,
                       color: enabled
-                          ? LensColor.editorText
-                          : LensColor.editorDisabled,
+                          ? ScanColor.editorText
+                          : ScanColor.editorDisabled,
                       height: 1,
                     ),
                   ),
@@ -698,14 +697,14 @@ class _SheetHandle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const SizedBox(
-      height: LensSpace.sm,
+      height: ScanSpace.sm,
       child: Center(
         child: SizedBox(
-          width: LensSize.sheetHandleWidth,
-          height: LensSize.sheetHandleHeight,
+          width: ScanSize.sheetHandleWidth,
+          height: ScanSize.sheetHandleHeight,
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: LensColor.sheetHandle,
+              color: ScanColor.sheetHandle,
               borderRadius: BorderRadius.all(Radius.circular(2)),
             ),
           ),
@@ -725,20 +724,20 @@ class _SheetSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      color: LensColor.sheetBand,
+      color: ScanColor.sheetBand,
       padding: const EdgeInsets.fromLTRB(
-        LensSpace.md,
-        LensSpace.xs,
-        LensSpace.md,
-        LensSpace.xs,
+        ScanSpace.md,
+        ScanSpace.xs,
+        ScanSpace.md,
+        ScanSpace.xs,
       ),
       child: Text(
         label,
         style: const TextStyle(
-          fontSize: LensType.label,
+          fontSize: ScanType.label,
           fontWeight: FontWeight.w500,
           letterSpacing: 0.4,
-          color: LensColor.sheetHeader,
+          color: ScanColor.sheetHeader,
         ),
       ),
     );
@@ -783,17 +782,17 @@ class _OptionsSheetState extends State<_OptionsSheet> {
         const _SheetHandle(),
         const Padding(
           padding: EdgeInsets.fromLTRB(
-            LensSpace.md,
-            LensSpace.xs,
-            LensSpace.md,
-            LensSpace.xs,
+            ScanSpace.md,
+            ScanSpace.xs,
+            ScanSpace.md,
+            ScanSpace.xs,
           ),
           child: Text(
             'Options',
             style: TextStyle(
-              fontSize: LensType.sheet,
+              fontSize: ScanType.sheet,
               fontWeight: FontWeight.w500,
-              color: LensColor.gray10,
+              color: ScanColor.gray10,
             ),
           ),
         ),
@@ -804,7 +803,7 @@ class _OptionsSheetState extends State<_OptionsSheet> {
             if (name != null && mounted) setState(() => _title = name);
           },
           child: Padding(
-            padding: const EdgeInsets.all(LensSpace.md),
+            padding: const EdgeInsets.all(ScanSpace.md),
             child: Row(
               children: [
                 Expanded(
@@ -813,15 +812,15 @@ class _OptionsSheetState extends State<_OptionsSheet> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: LensType.row,
-                      color: LensColor.gray10,
+                      fontSize: ScanType.row,
+                      color: ScanColor.gray10,
                     ),
                   ),
                 ),
                 const Icon(
                   Icons.edit_outlined,
-                  size: LensSize.iconSmall,
-                  color: LensColor.accent,
+                  size: ScanSize.iconSmall,
+                  color: ScanColor.accent,
                 ),
               ],
             ),
@@ -877,11 +876,11 @@ class _CheckRow extends StatelessWidget {
       child: InkWell(
         onTap: () => onChanged(!checked),
         child: Padding(
-          padding: const EdgeInsets.all(LensSpace.md),
+          padding: const EdgeInsets.all(ScanSpace.md),
           child: Row(
             children: [
-              Icon(icon, size: LensSize.icon, color: LensColor.gray10),
-              const SizedBox(width: LensSpace.md),
+              Icon(icon, size: ScanSize.icon, color: ScanColor.gray10),
+              const SizedBox(width: ScanSpace.md),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -890,33 +889,32 @@ class _CheckRow extends StatelessWidget {
                     Text(
                       label,
                       style: const TextStyle(
-                        fontSize: LensType.row,
-                        color: LensColor.gray10,
+                        fontSize: ScanType.row,
+                        color: ScanColor.gray10,
                       ),
                     ),
                     Text(
                       hint,
                       style: const TextStyle(
-                        fontSize: LensType.label,
-                        color: LensColor.gray8,
+                        fontSize: ScanType.label,
+                        color: ScanColor.gray8,
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: LensSpace.md),
-              // `lensCheckableGroup`: accent fill + white tick when on, accent
-              // outline when off.
+              const SizedBox(width: ScanSpace.md),
+              // Accent fill + white tick when on, accent outline when off.
               Container(
-                width: LensSize.iconSmall,
-                height: LensSize.iconSmall,
+                width: ScanSize.iconSmall,
+                height: ScanSize.iconSmall,
                 decoration: BoxDecoration(
-                  color: checked ? LensColor.accent : null,
-                  border: Border.all(color: LensColor.accent, width: 2),
+                  color: checked ? ScanColor.accent : null,
+                  border: Border.all(color: ScanColor.accent, width: 2),
                   borderRadius: BorderRadius.circular(3),
                 ),
                 child: checked
-                    ? const Icon(Icons.check, size: 14, color: LensColor.gray0)
+                    ? const Icon(Icons.check, size: 14, color: ScanColor.gray0)
                     : null,
               ),
             ],
@@ -944,17 +942,17 @@ class _FilterSheet extends StatelessWidget {
         const _SheetHandle(),
         const Padding(
           padding: EdgeInsets.fromLTRB(
-            LensSpace.md,
-            LensSpace.xs,
-            LensSpace.md,
-            LensSpace.md,
+            ScanSpace.md,
+            ScanSpace.xs,
+            ScanSpace.md,
+            ScanSpace.md,
           ),
           child: Text(
             'Filters',
             style: TextStyle(
-              fontSize: LensType.sheet,
+              fontSize: ScanType.sheet,
               fontWeight: FontWeight.w500,
-              color: LensColor.gray10,
+              color: ScanColor.gray10,
             ),
           ),
         ),
@@ -963,8 +961,8 @@ class _FilterSheet extends StatelessWidget {
             onTap: () => Navigator.pop(context, filter),
             child: Padding(
               padding: const EdgeInsets.symmetric(
-                horizontal: LensSpace.md,
-                vertical: LensSpace.sm,
+                horizontal: ScanSpace.md,
+                vertical: ScanSpace.sm,
               ),
               child: Row(
                 children: [
@@ -972,16 +970,16 @@ class _FilterSheet extends StatelessWidget {
                     child: Text(
                       filter.label,
                       style: const TextStyle(
-                        fontSize: LensType.row,
-                        color: LensColor.gray10,
+                        fontSize: ScanType.row,
+                        color: ScanColor.gray10,
                       ),
                     ),
                   ),
                   if (filter == selected)
                     const Icon(
                       Icons.check,
-                      size: LensSize.icon,
-                      color: LensColor.accent,
+                      size: ScanSize.icon,
+                      color: ScanColor.accent,
                     ),
                 ],
               ),
@@ -1015,10 +1013,10 @@ class _ReorderSheetState extends State<_ReorderSheet> {
         const _SheetHandle(),
         Padding(
           padding: const EdgeInsets.fromLTRB(
-            LensSpace.md,
-            LensSpace.xs,
-            LensSpace.md,
-            LensSpace.md,
+            ScanSpace.md,
+            ScanSpace.xs,
+            ScanSpace.md,
+            ScanSpace.md,
           ),
           child: Row(
             children: [
@@ -1026,9 +1024,9 @@ class _ReorderSheetState extends State<_ReorderSheet> {
                 child: Text(
                   'Reorder',
                   style: TextStyle(
-                    fontSize: LensType.sheet,
+                    fontSize: ScanType.sheet,
                     fontWeight: FontWeight.w500,
-                    color: LensColor.gray10,
+                    color: ScanColor.gray10,
                   ),
                 ),
               ),
@@ -1040,11 +1038,11 @@ class _ReorderSheetState extends State<_ReorderSheet> {
           ),
         ),
         SizedBox(
-          height: LensSize.filmThumbHeight + LensSpace.md,
+          height: ScanSize.filmThumbHeight + ScanSpace.md,
           child: ReorderableListView.builder(
             scrollDirection: Axis.horizontal,
             buildDefaultDragHandles: false,
-            padding: const EdgeInsets.symmetric(horizontal: LensSpace.md),
+            padding: const EdgeInsets.symmetric(horizontal: ScanSpace.md),
             itemCount: _order.length,
             onReorderItem: (from, to) => setState(() {
               final page = _order.removeAt(from);
@@ -1056,7 +1054,7 @@ class _ReorderSheetState extends State<_ReorderSheet> {
                 key: ValueKey<_Page>(page),
                 index: index,
                 child: Padding(
-                  padding: const EdgeInsets.only(right: LensSpace.sm),
+                  padding: const EdgeInsets.only(right: ScanSpace.sm),
                   child: ColorFiltered(
                     colorFilter: ColorFilter.matrix(
                       colorMatrixFor(page.filter),
@@ -1066,11 +1064,11 @@ class _ReorderSheetState extends State<_ReorderSheet> {
                       child: Image.memory(
                         page.bytes,
                         width: page.turns.isOdd
-                            ? LensSize.filmThumbHeight
-                            : LensSize.filmThumbWidth,
+                            ? ScanSize.filmThumbHeight
+                            : ScanSize.filmThumbWidth,
                         height: page.turns.isOdd
-                            ? LensSize.filmThumbWidth
-                            : LensSize.filmThumbHeight,
+                            ? ScanSize.filmThumbWidth
+                            : ScanSize.filmThumbHeight,
                         fit: BoxFit.cover,
                         cacheWidth: 160,
                         gaplessPlayback: true,

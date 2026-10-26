@@ -7,10 +7,10 @@ import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-import 'package:lens_lite/data/scan_repository.dart';
-import 'package:lens_lite/models/scan_entry.dart';
-import 'package:lens_lite/screens/history_screen.dart';
-import 'package:lens_lite/services/scan_exporter.dart';
+import 'package:scan/data/scan_repository.dart';
+import 'package:scan/models/scan_entry.dart';
+import 'package:scan/screens/history_screen.dart';
+import 'package:scan/services/scan_exporter.dart';
 
 /// On-device end-to-end check of the shipped flow:
 /// My Scans -> capture -> crop -> review -> save.
@@ -20,7 +20,7 @@ import 'package:lens_lite/services/scan_exporter.dart';
 ///
 /// A fresh install has no camera grant and the system dialog swallows the taps,
 /// so grant it first:
-/// `adb shell pm grant com.example.lens_lite android.permission.CAMERA`.
+/// `adb shell pm grant com.aniruth.scan android.permission.CAMERA`.
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 

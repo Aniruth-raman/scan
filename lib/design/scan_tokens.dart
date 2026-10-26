@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
 
-/// Design tokens recovered by measuring Microsoft Lens 16.0.18526.20136
-/// (`com.microsoft.office.officelens`) on a 384 x 832 dp viewport.
+/// Design tokens for Scan.
 ///
-/// Every constant traces back to either a decoded resource (`.rea/apktool`) or a
-/// live on-device measurement (`.rea/shots`). Geometry is reimplemented from
-/// measurement; no Microsoft assets, icon glyphs or copy are used.
-abstract final class LensColor {
+/// Geometry was measured against a reference document scanner on a
+/// 384 x 832 dp viewport; the layout constants trace back to those measurements
+/// (`.rea/apktool`, `.rea/shots`). Nothing here is a copy of another app's
+/// assets: the palette, the icon, the icons and the copy are ours.
+abstract final class ScanColor {
   // ---------------------------------------------------------------- brand --
-  /// `officelens_theme_color` / `default_app_color`.
-  static const accent = Color(0xFFD83B01);
+  /// The shutter blue: the launcher mark and the single accent in the UI.
+  static const accent = Color(0xFF0B57D0);
 
-  /// `lenshvc_default_theme_color` — the alternate/enterprise accent.
-  static const accentAlt = Color(0xFF0086F0);
+  /// A lighter blue for accents that sit on the dark stage.
+  static const accentLight = Color(0xFF4D8DF0);
 
   // ---------------------------------------------------- grey ramp (G0-G11) --
   static const gray0 = Color(0xFFFFFFFF);
@@ -29,32 +29,32 @@ abstract final class LensColor {
   static const gray11 = Color(0xFF000000);
 
   // ---------------------------------------------------------- stage chrome --
-  /// Capture and crop are black in every theme. Lens has no dark variant of the
-  /// editor either — it switches chrome by *stage*, not by system brightness.
+  /// Capture and crop are black in every theme. Scan has no dark variant of
+  /// the editor either - it switches chrome by *stage*, not by system brightness.
   static const stageBlack = Color(0xFF000000);
   static const stageWhite = Color(0xFFFFFFFF);
 
-  /// `lenshvc_capture_bottom_gradient`: #00000000 -> #99000000 at 270 degrees.
+  /// : #00000000 -> #99000000 at 270 degrees.
   static const scrimClear = Color(0x00000000);
   static const scrimSolid = Color(0x99000000);
 
-  /// `lenshvc_k2_rounded_corner_background`.
+  /// .
   static const trayFill = Color(0x80404040);
   static const trayStroke = Color(0x66606060);
 
-  /// `lenshvc_page_number_background`, the review stage's page chip.
+  /// , the review stage's page chip.
   static const pageNumberFill = Color(0xB3303030);
 
-  /// `lenshvc_color_black_30`.
+  /// .
   static const black30 = Color(0x4D000000);
   static const white70 = Color(0xB4FFFFFF);
 
   // ------------------------------------------------------- editor stage --
-  /// `lenshvc_k2_feature_tray_background` — the post-capture tray is a far
+  ///  — the post-capture tray is a far
   /// darker plate than the capture tray (`#CC171717` vs `#80404040`).
   static const editorTrayFill = Color(0xCC171717);
 
-  /// `lenshvc_postcapture_close_text` — "Options" and the action labels.
+  ///  — "Options" and the action labels.
   static const editorText = Color(0xFFD6D6D6);
 
   /// Measured tint of an enabled action icon on black.
@@ -70,7 +70,7 @@ abstract final class LensColor {
   /// Measured section-header text on that band.
   static const sheetHeader = Color(0xFF4A4A4A);
 
-  /// `lensPackaging_Handle_color`.
+  /// .
   static const sheetHandle = Color(0xFF919191);
 
   /// `info_recent_files` / `info_recent_files_caption` — the band under the
@@ -85,8 +85,8 @@ abstract final class LensColor {
   static const paper = Color(0xFFF7F7F7);
 }
 
-/// Spacing ladder. Lens works in 4 dp multiples; 16 dp is the page gutter.
-abstract final class LensSpace {
+/// Spacing ladder. The design works in 4 dp multiples; 16 dp is the page gutter.
+abstract final class ScanSpace {
   static const xxs = 4.0;
   static const xs = 8.0;
   static const sm = 12.0;
@@ -96,7 +96,7 @@ abstract final class LensSpace {
 }
 
 /// Corner ladder: 4 card, 8 hero, 12 thumbnail, 16 tray.
-abstract final class LensRadius {
+abstract final class ScanRadius {
   static const card = 4.0;
   static const hero = 8.0;
   static const thumb = 12.0;
@@ -105,11 +105,11 @@ abstract final class LensRadius {
 }
 
 /// Measured geometry. Two interactive heights only: 48 and 40 (hero).
-abstract final class LensSize {
+abstract final class ScanSize {
   /// Every touch target is 48 dp.
   static const touch = 48.0;
 
-  /// `lenshvc_k2_hero_btn_height` — full-width pill actions.
+  ///  — full-width pill actions.
   static const heroHeight = 40.0;
 
   /// Measured capture ring: 191 px / 2.8125 = 68 dp.
@@ -148,10 +148,10 @@ abstract final class LensSize {
   /// Measured "My Scans" capture button.
   static const scanFab = 48.0;
 
-  /// `lenshvc_crop_magnifier_diameter` — the loupe shown while a corner moves.
+  ///  — the loupe shown while a corner moves.
   static const magnifier = 80.0;
 
-  /// `lenshvc_crop_magnifier_boundary` — the loupe's white ring.
+  ///  — the loupe's white ring.
   static const magnifierBorder = 2.0;
 
   /// How far the loupe sits above the finger, so the corner stays visible.
@@ -160,8 +160,8 @@ abstract final class LensSize {
   static const icon = 24.0;
   static const iconSmall = 20.0;
 
-  /// `lenshvc_CollectionViewPageNumber_container_width` — the review stage's
-  /// page chip, 37 x 28 dp (`lenshvc_viewpager_peak_size`) with a 4 dp radius.
+  ///  — the review stage's
+  /// The review stage's page chip, 37 x 28 dp with a 4 dp radius.
   static const pageNumberWidth = 37.0;
   static const pageNumberHeight = 28.0;
 
@@ -169,7 +169,7 @@ abstract final class LensSize {
   /// menu.
   static const locationBandHeight = 46.0;
 
-  /// `lenshvc_packaging_sheet_handle`
+  /// The 36 x 4 dp grab handle above every sheet.
   static const sheetHandleWidth = 36.0;
   static const sheetHandleHeight = 4.0;
 
@@ -177,9 +177,9 @@ abstract final class LensSize {
   static const sheetPeek = 160.0;
 }
 
-/// Type scale. Lens uses Roboto (Android `sans-serif` / `sans-serif-medium`),
-/// which is Flutter's default face, so no font asset is required.
-abstract final class LensType {
+/// Type scale. Roboto (Android `sans-serif` / `sans-serif-medium`) is
+/// Flutter's default face, so no font asset is required.
+abstract final class ScanType {
   /// Sheet header, e.g. "Save as".
   static const sheet = 20.0;
 
@@ -203,7 +203,7 @@ abstract final class LensType {
 }
 
 /// Motion. Durations are calibrated for feel, not recovered from the binary.
-abstract final class LensMotion {
+abstract final class ScanMotion {
   static const fast = Duration(milliseconds: 120);
   static const base = Duration(milliseconds: 200);
   static const slow = Duration(milliseconds: 300);
@@ -214,12 +214,12 @@ abstract final class LensMotion {
 
 /// Stage-scoped palettes.
 ///
-/// Capture and crop read from [LensChrome.dark]; list and editor from
-/// [LensChrome.light]. Screens pick a chrome explicitly — there is deliberately
+/// Capture and crop read from [ScanChrome.dark]; list and editor from
+/// [ScanChrome.light]. Screens pick a chrome explicitly — there is deliberately
 /// no `Brightness` switch anywhere in the UI layer.
 @immutable
-class LensChrome {
-  const LensChrome({
+class ScanChrome {
+  const ScanChrome({
     required this.background,
     required this.foreground,
     required this.secondary,
@@ -231,17 +231,17 @@ class LensChrome {
   final Color secondary;
   final Color divider;
 
-  static const dark = LensChrome(
-    background: LensColor.stageBlack,
-    foreground: LensColor.gray0,
-    secondary: LensColor.white70,
-    divider: LensColor.black30,
+  static const dark = ScanChrome(
+    background: ScanColor.stageBlack,
+    foreground: ScanColor.gray0,
+    secondary: ScanColor.white70,
+    divider: ScanColor.black30,
   );
 
-  static const light = LensChrome(
-    background: LensColor.gray0,
-    foreground: LensColor.gray10,
-    secondary: LensColor.gray7,
-    divider: LensColor.gray3,
+  static const light = ScanChrome(
+    background: ScanColor.gray0,
+    foreground: ScanColor.gray10,
+    secondary: ScanColor.gray7,
+    divider: ScanColor.gray3,
   );
 }

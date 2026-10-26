@@ -3,8 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../design/lens_hero_button.dart';
-import '../design/lens_tokens.dart';
+import '../design/scan_hero_button.dart';
+import '../design/scan_tokens.dart';
 import '../services/document_image_ops.dart';
 import '../services/document_detector.dart';
 import '../services/native_image_kit.dart';
@@ -24,11 +24,10 @@ class AdjustResult {
 
 /// Crop stage: corner adjustment with a live tone preview.
 ///
-/// Geometry is measured from `lens-state4.png` and `crop_fragment_k2.xml`:
-/// a 96 dp filmstrip band (`lenshvc_crop_carousel_container_size`) above a
-/// 40 dp hero with 16 dp side and 12 dp vertical margins, and a 102 x 148 dp
-/// translucent feature tray (`crop_feature_tray`, 8 dp from the right edge)
-/// floating in the middle of the image.
+/// Geometry is measured on the 384 x 832 dp reference viewport: a 96 dp
+/// filmstrip band above a 40 dp hero with 16 dp side and 12 dp vertical
+/// margins, and a 102 x 148 dp translucent feature tray 8 dp from the right
+/// edge, floating in the middle of the image.
 class AdjustScreen extends StatefulWidget {
   const AdjustScreen({
     super.key,
@@ -333,7 +332,7 @@ class _AdjustScreenState extends State<AdjustScreen> {
         systemNavigationBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor: LensColor.stageBlack,
+        backgroundColor: ScanColor.stageBlack,
         body: Stack(
           children: [
             Column(
@@ -366,7 +365,7 @@ class _AdjustScreenState extends State<AdjustScreen> {
           height: 24,
           child: CircularProgressIndicator(
             strokeWidth: 2,
-            color: LensColor.gray0,
+            color: ScanColor.gray0,
           ),
         ),
       );
@@ -375,13 +374,13 @@ class _AdjustScreenState extends State<AdjustScreen> {
     if (error != null) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(LensSpace.lg),
+          padding: const EdgeInsets.all(ScanSpace.lg),
           child: Text(
             error,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              color: LensColor.white70,
-              fontSize: LensType.body,
+              color: ScanColor.white70,
+              fontSize: ScanType.body,
             ),
           ),
         ),
@@ -454,25 +453,25 @@ class _AdjustScreenState extends State<AdjustScreen> {
     );
   }
 
-  /// The loupe: an 80 dp circle (`lenshvc_crop_magnifier_diameter`) with a 2 dp
+  /// The loupe: an 80 dp circle () with a 2 dp
   /// white ring, floating above the finger so the corner is never under a thumb.
   ///
   /// `RawMagnifier` magnifies what is already painted beneath it, so the page,
   /// the quad and the corner grip are the same pixels at 2x — no second decode
   /// and no duplicated widget tree.
   Widget _buildLoupe(BoxConstraints constraints, Offset focal) {
-    const diameter = LensSize.magnifier;
+    const diameter = ScanSize.magnifier;
     const radius = diameter / 2;
     final preferred =
-        focal + const Offset(0, -(radius + LensSize.magnifierGap));
+        focal + const Offset(0, -(radius + ScanSize.magnifierGap));
     final centre = Offset(
       preferred.dx.clamp(
-        radius + LensSpace.xs,
-        constraints.maxWidth - radius - LensSpace.xs,
+        radius + ScanSpace.xs,
+        constraints.maxWidth - radius - ScanSpace.xs,
       ),
       preferred.dy.clamp(
-        radius + LensSpace.xs,
-        constraints.maxHeight - radius - LensSpace.xs,
+        radius + ScanSpace.xs,
+        constraints.maxHeight - radius - ScanSpace.xs,
       ),
     );
     return Positioned(
@@ -484,8 +483,8 @@ class _AdjustScreenState extends State<AdjustScreen> {
         decoration: MagnifierDecoration(
           shape: CircleBorder(
             side: BorderSide(
-              color: LensColor.gray0,
-              width: LensSize.magnifierBorder,
+              color: ScanColor.gray0,
+              width: ScanSize.magnifierBorder,
             ),
           ),
           shadows: const [
@@ -511,7 +510,7 @@ class _AdjustScreenState extends State<AdjustScreen> {
       top: 0,
       height: 63,
       child: Container(
-        color: LensColor.black30,
+        color: ScanColor.black30,
         child: Stack(
           children: [
             Positioned(
@@ -521,15 +520,15 @@ class _AdjustScreenState extends State<AdjustScreen> {
                 button: true,
                 label: 'Back to capture',
                 child: SizedBox(
-                  width: LensSize.touch,
-                  height: LensSize.touch,
+                  width: ScanSize.touch,
+                  height: ScanSize.touch,
                   child: InkResponse(
                     radius: 24,
                     onTap: () => Navigator.pop(context),
                     child: const Icon(
                       Icons.arrow_back,
-                      size: LensSize.icon,
-                      color: LensColor.gray0,
+                      size: ScanSize.icon,
+                      color: ScanColor.gray0,
                     ),
                   ),
                 ),
@@ -545,7 +544,7 @@ class _AdjustScreenState extends State<AdjustScreen> {
   /// `crop_feature_tray` (top and bottom constrained to the parent).
   Widget _buildTray() {
     return Positioned(
-      right: LensSpace.xs,
+      right: ScanSpace.xs,
       top: 0,
       bottom: 0,
       child: Align(
@@ -586,19 +585,19 @@ class _AdjustScreenState extends State<AdjustScreen> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const SizedBox(height: LensSpace.xs),
+        const SizedBox(height: ScanSpace.xs),
         const Text(
           'Crop document',
-          style: TextStyle(fontSize: LensType.body, color: LensColor.gray3),
+          style: TextStyle(fontSize: ScanType.body, color: ScanColor.gray3),
         ),
-        const SizedBox(height: LensSpace.md),
-        SizedBox(height: LensSize.filmThumbHeight, child: _buildFilmstrip()),
+        const SizedBox(height: ScanSpace.md),
+        SizedBox(height: ScanSize.filmThumbHeight, child: _buildFilmstrip()),
         const SizedBox(height: 26),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: LensSpace.md),
+          padding: const EdgeInsets.symmetric(horizontal: ScanSpace.md),
           child: _buildHero(),
         ),
-        const SizedBox(height: LensSpace.sm),
+        const SizedBox(height: ScanSpace.sm),
       ],
     );
   }
@@ -608,8 +607,8 @@ class _AdjustScreenState extends State<AdjustScreen> {
     if (displayJpeg == null || _quad == null) {
       return const SizedBox.shrink();
     }
-    const tileWidth = LensSize.filmThumbWidth;
-    const gap = LensSpace.sm;
+    const tileWidth = ScanSize.filmThumbWidth;
+    const gap = ScanSpace.sm;
     final pages = widget.pages;
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -648,14 +647,14 @@ class _AdjustScreenState extends State<AdjustScreen> {
   }
 
   Widget _buildHero() {
-    return LensHeroButton(
+    return ScanHeroButton(
       label: 'Review and Edit',
       busy: _applying,
       busyLabel: 'Preparing…',
       trailing: const Icon(
         Icons.chevron_right,
         size: 18,
-        color: LensColor.gray10,
+        color: ScanColor.gray10,
       ),
       onTap: () => _apply(),
     );
@@ -695,16 +694,16 @@ class _TrayAction extends StatelessWidget {
                     label,
                     maxLines: 1,
                     style: const TextStyle(
-                      fontSize: LensType.body,
-                      color: LensColor.gray0,
+                      fontSize: ScanType.body,
+                      color: ScanColor.gray0,
                     ),
                   ),
                 ),
               ),
               Positioned(
-                right: LensSpace.sm,
-                top: LensSpace.sm,
-                child: Icon(icon, size: LensSize.icon, color: LensColor.gray0),
+                right: ScanSpace.sm,
+                top: ScanSpace.sm,
+                child: Icon(icon, size: ScanSize.icon, color: ScanColor.gray0),
               ),
             ],
           ),
@@ -735,8 +734,8 @@ class _PageThumb extends StatelessWidget {
     final swapped = quarterTurns.isOdd;
     Widget image = Image.memory(
       bytes,
-      width: swapped ? LensSize.filmThumbHeight : LensSize.filmThumbWidth,
-      height: swapped ? LensSize.filmThumbWidth : LensSize.filmThumbHeight,
+      width: swapped ? ScanSize.filmThumbHeight : ScanSize.filmThumbWidth,
+      height: swapped ? ScanSize.filmThumbWidth : ScanSize.filmThumbHeight,
       fit: BoxFit.cover,
       cacheWidth: 160,
       gaplessPlayback: true,
@@ -752,12 +751,12 @@ class _PageThumb extends StatelessWidget {
       );
     }
     return Container(
-      width: LensSize.filmThumbWidth,
-      height: LensSize.filmThumbHeight,
+      width: ScanSize.filmThumbWidth,
+      height: ScanSize.filmThumbHeight,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(LensRadius.hero),
+        borderRadius: BorderRadius.circular(ScanRadius.hero),
         border: Border.all(
-          color: selected ? LensColor.accent : Colors.transparent,
+          color: selected ? ScanColor.accentLight : Colors.transparent,
           width: 2,
         ),
       ),
@@ -781,18 +780,18 @@ class _AddTile extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: SizedBox(
-          width: LensSize.filmThumbWidth,
-          height: LensSize.filmThumbHeight,
+          width: ScanSize.filmThumbWidth,
+          height: ScanSize.filmThumbHeight,
           child: CustomPaint(
             painter: _DashedBorderPainter(
-              radius: LensRadius.hero,
-              color: LensColor.gray0.withValues(alpha: 0.55),
+              radius: ScanRadius.hero,
+              color: ScanColor.gray0.withValues(alpha: 0.55),
             ),
             child: const Center(
               child: Icon(
                 Icons.add_photo_alternate_outlined,
                 size: 24,
-                color: LensColor.gray0,
+                color: ScanColor.gray0,
               ),
             ),
           ),
@@ -853,11 +852,11 @@ class _CropPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2
       ..strokeJoin = StrokeJoin.round
-      ..color = LensColor.gray0;
+      ..color = ScanColor.gray0;
     canvas.drawPath(path, line);
 
     // Edge-midpoint pills: 33 x 3.5 dp, rotated onto their edge.
-    final pill = Paint()..color = LensColor.gray0;
+    final pill = Paint()..color = ScanColor.gray0;
     for (var i = 0; i < 4; i++) {
       final a = corners[i];
       final b = corners[(i + 1) % 4];
@@ -876,7 +875,7 @@ class _CropPainter extends CustomPainter {
     }
 
     // Corner grips: 13 dp white discs.
-    final grip = Paint()..color = LensColor.gray0;
+    final grip = Paint()..color = ScanColor.gray0;
     final edge = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1

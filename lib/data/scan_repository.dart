@@ -24,7 +24,7 @@ class SqfliteScanRepository implements ScanRepository {
     final existing = _db;
     if (existing != null) return existing;
     final path =
-        databasePath ?? p.join(await getDatabasesPath(), 'lens_lite_scans.db');
+        databasePath ?? p.join(await getDatabasesPath(), 'scan.db');
     final db = await openDatabase(
       path,
       version: 3,
