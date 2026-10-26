@@ -140,6 +140,15 @@ abstract final class LensSize {
   /// Measured "My Scans" capture button.
   static const scanFab = 48.0;
 
+  /// `lenshvc_crop_magnifier_diameter` — the loupe shown while a corner moves.
+  static const magnifier = 80.0;
+
+  /// `lenshvc_crop_magnifier_boundary` — the loupe's white ring.
+  static const magnifierBorder = 2.0;
+
+  /// How far the loupe sits above the finger, so the corner stays visible.
+  static const magnifierGap = 24.0;
+
   static const icon = 24.0;
   static const iconSmall = 20.0;
 

@@ -65,6 +65,10 @@ class _AdjustScreenState extends State<AdjustScreen> {
   String? _error;
   int? _dragIndex;
 
+  /// Finger position in stage coordinates while a corner is being dragged; the
+  /// loupe is anchored to it.
+  Offset? _loupeAt;
+
   @override
   void initState() {
     super.initState();
@@ -240,7 +244,9 @@ class _AdjustScreenState extends State<AdjustScreen> {
 
   // --------------------------------------------------------------- dragging --
 
-  void _selectCorner(Offset localPosition, double scale) {
+  /// [origin] is the image's top-left in stage coordinates, so the loupe can be
+  /// placed around the finger rather than around the image.
+  void _selectCorner(Offset localPosition, Offset origin, double scale) {
     final quad = _quad;
     if (quad == null) return;
     final corners = quad.corners
@@ -256,9 +262,10 @@ class _AdjustScreenState extends State<AdjustScreen> {
       }
     }
     _dragIndex = nearest;
+    setState(() => _loupeAt = localPosition + origin);
   }
 
-  void _dragTo(Offset localPosition, double scale) {
+  void _dragTo(Offset localPosition, Offset origin, double scale) {
     final index = _dragIndex;
     final quad = _quad;
     if (index == null || quad == null) return;
@@ -279,7 +286,13 @@ class _AdjustScreenState extends State<AdjustScreen> {
         bottomRight: corners[2],
         bottomLeft: corners[3],
       );
+      _loupeAt = localPosition + origin;
     });
+  }
+
+  void _endDrag() {
+    _dragIndex = null;
+    if (_loupeAt != null) setState(() => _loupeAt = null);
   }
 
   // ------------------------------------------------------------------ build --
@@ -371,9 +384,21 @@ class _AdjustScreenState extends State<AdjustScreen> {
               height: height,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onPanDown: (details) => _selectCorner(details.localPosition, scale),
-                onPanUpdate: (details) => _dragTo(details.localPosition, scale),
-                onPanEnd: (_) => HapticFeedback.selectionClick(),
+                onPanDown: (details) => _selectCorner(
+                  details.localPosition,
+                  Offset(left, top),
+                  scale,
+                ),
+                onPanUpdate: (details) => _dragTo(
+                  details.localPosition,
+                  Offset(left, top),
+                  scale,
+                ),
+                onPanEnd: (_) {
+                  HapticFeedback.selectionClick();
+                  _endDrag();
+                },
+                onPanCancel: _endDrag,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
@@ -394,9 +419,49 @@ class _AdjustScreenState extends State<AdjustScreen> {
                 ),
               ),
             ),
+            if (_loupeAt != null) _buildLoupe(constraints, _loupeAt!),
           ],
         );
       },
+    );
+  }
+
+  /// The loupe: an 80 dp circle (`lenshvc_crop_magnifier_diameter`) with a 2 dp
+  /// white ring, floating above the finger so the corner is never under a thumb.
+  ///
+  /// `RawMagnifier` magnifies what is already painted beneath it, so the page,
+  /// the quad and the corner grip are the same pixels at 2x — no second decode
+  /// and no duplicated widget tree.
+  Widget _buildLoupe(BoxConstraints constraints, Offset focal) {
+    const diameter = LensSize.magnifier;
+    const radius = diameter / 2;
+    final preferred = focal + const Offset(0, -(radius + LensSize.magnifierGap));
+    final centre = Offset(
+      preferred.dx.clamp(radius + LensSpace.xs, constraints.maxWidth - radius - LensSpace.xs),
+      preferred.dy.clamp(radius + LensSpace.xs, constraints.maxHeight - radius - LensSpace.xs),
+    );
+    return Positioned(
+      left: centre.dx - radius,
+      top: centre.dy - radius,
+      child: RawMagnifier(
+        size: const Size.square(diameter),
+        magnificationScale: 2,
+        decoration: MagnifierDecoration(
+          shape: CircleBorder(
+            side: BorderSide(
+              color: LensColor.gray0,
+              width: LensSize.magnifierBorder,
+            ),
+          ),
+          shadows: const [
+            BoxShadow(color: Color(0x59000000), blurRadius: 8, offset: Offset(0, 2)),
+          ],
+        ),
+        // The magnifier reads the point this far from its own centre, which is
+        // what keeps the content under the finger when the circle is clamped
+        // against a screen edge.
+        focalPointOffset: focal - centre,
+      ),
     );
   }
 

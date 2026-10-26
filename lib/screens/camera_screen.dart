@@ -8,6 +8,7 @@ import '../design/lens_tokens.dart';
 import '../services/document_detection_worker.dart';
 import '../services/document_detector.dart';
 import '../services/native_image_kit.dart';
+import '../services/quad_smoother.dart';
 import '../services/scan_exporter.dart';
 import 'adjust_screen.dart';
 import 'review_screen.dart';
@@ -52,6 +53,7 @@ class _CameraScreenState extends State<CameraScreen> {
 
   final DocumentDetectionWorker _detector =
       DocumentDetectionWorker.instance;
+  final QuadSmoother _smoother = QuadSmoother();
   DocumentQuad? _quad;
   bool _analyzing = false;
   bool _wasDetecting = false;
@@ -168,17 +170,21 @@ class _CameraScreenState extends State<CameraScreen> {
       );
       if (!mounted) return;
       final rotated = rotation == 90 || rotation == 270;
+      final frame = Size(
+        (rotated ? image.height : image.width).toDouble(),
+        (rotated ? image.width : image.height).toDouble(),
+      );
+      // The detector has no memory of the previous frame; the smoother does, so
+      // the outline stops hopping between competing candidates.
+      final smoothed = _smoother.update(quad, frame);
       setState(() {
-        _quad = quad;
-        _frameDisplaySize = Size(
-          (rotated ? image.height : image.width).toDouble(),
-          (rotated ? image.width : image.height).toDouble(),
-        );
+        _quad = smoothed;
+        _frameDisplaySize = frame;
       });
-      if (quad != null && !_wasDetecting) {
-        await HapticFeedback.selectionClick();
+      if (smoothed != null && !_wasDetecting) {
+        HapticFeedback.selectionClick();
       }
-      _wasDetecting = quad != null;
+      _wasDetecting = smoothed != null;
     } finally {
       _analyzing = false;
     }
@@ -192,6 +198,7 @@ class _CameraScreenState extends State<CameraScreen> {
       _quad = null;
       _wasDetecting = false;
     });
+    _smoother.reset();
     await _pauseStream();
     final old = _controller;
     _controller = null;
