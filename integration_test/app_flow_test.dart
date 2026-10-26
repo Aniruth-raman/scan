@@ -8,18 +8,27 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:lens_lite/data/scan_repository.dart';
+import 'package:lens_lite/models/scan_entry.dart';
 import 'package:lens_lite/screens/history_screen.dart';
 import 'package:lens_lite/services/scan_exporter.dart';
 
-/// On-device end-to-end check of the capture flow:
-/// My Scans -> live camera -> shutter -> corner adjust -> review -> save.
+/// On-device end-to-end check of the shipped flow:
+/// My Scans -> capture -> crop -> review -> save.
+///
+/// The camera screen repaints every analysed frame, so nothing here uses
+/// `pumpAndSettle` while the viewfinder is live — it would never settle.
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+  /// The shutter is a painted ring; it is reached through its semantics label.
+  final shutter = find.byWidgetPredicate(
+    (widget) => widget is Semantics && widget.properties.label == 'Capture',
+  );
 
   Future<bool> waitFor(
     WidgetTester tester,
     Finder finder, {
-    Duration timeout = const Duration(seconds: 20),
+    Duration timeout = const Duration(seconds: 45),
   }) async {
     final deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
@@ -29,129 +38,129 @@ void main() {
     return finder.evaluate().isNotEmpty;
   }
 
-  /// Waits until a button is both present and enabled (the crop action stays
-  /// disabled while the capture preview is still being prepared).
-  Future<bool> waitForEnabled(
+  Future<bool> waitUntilGone(
     WidgetTester tester,
     Finder finder, {
-    Duration timeout = const Duration(seconds: 25),
+    Duration timeout = const Duration(seconds: 30),
   }) async {
     final deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
       await tester.pump(const Duration(milliseconds: 200));
-      if (finder.evaluate().isEmpty) continue;
-      final widget = tester.widget(finder);
-      if (widget is ButtonStyleButton && widget.onPressed != null) return true;
+      if (finder.evaluate().isEmpty) return true;
     }
-    return false;
+    return finder.evaluate().isEmpty;
   }
 
-  testWidgets('capture flow reaches a live preview and saves a scan',
-      (tester) async {
+  Future<ScanRepository> pumpApp(WidgetTester tester) async {
     final repository = SqfliteScanRepository();
     final documents = await getApplicationDocumentsDirectory();
     final storage = Directory(p.join(documents.path, 'scans'));
     await storage.create(recursive: true);
-    final exporter =
-        ScanExporter(repository: repository, storageDirectory: storage);
-
     await tester.pumpWidget(
       MaterialApp(
-        home: HistoryScreen(repository: repository, exporter: exporter),
+        home: HistoryScreen(
+          repository: repository,
+          exporter: ScanExporter(
+            repository: repository,
+            storageDirectory: storage,
+          ),
+        ),
       ),
     );
-    // ignore: avoid_print
-    print('FLOW step1 history pumped, fab='
-        '${find.byType(FloatingActionButton).evaluate().length}');
+    await waitFor(tester, find.text('My Scans'));
+    return repository;
+  }
 
-    await tester.tap(find.byType(FloatingActionButton));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    final previewReady = await waitFor(tester, find.byType(CameraPreview));
-    // ignore: avoid_print
-    print('FLOW step2 camera preview visible: $previewReady '
-        'errorIcon=${find.byIcon(Icons.no_photography).evaluate().length} '
-        'spinner=${find.byType(CircularProgressIndicator).evaluate().length}');
-    expect(previewReady, isTrue, reason: 'camera preview never became visible');
-
-    // Let detection stream run for a moment.
-    await tester.pump(const Duration(seconds: 2));
-
-    await tester.tap(find.byIcon(Icons.camera));
-    final adjustReady = await waitForEnabled(
-      tester,
-      find.widgetWithText(FilledButton, 'Done'),
-    );
-    // ignore: avoid_print
-    print('FLOW step3 adjust screen ready: $adjustReady');
-    expect(adjustReady, isTrue, reason: 'shutter did not reach the crop step');
-
-    await tester.tap(find.widgetWithText(FilledButton, 'Done'));
-    final reviewReady = await waitFor(tester, find.text('Save to gallery'));
-    // ignore: avoid_print
-    print('FLOW step4 review visible: $reviewReady');
-    expect(reviewReady, isTrue, reason: 'crop did not reach the review step');
-
-    await tester.tap(find.text('Save to gallery'));
-    final backHome = await waitFor(
-      tester,
-      find.byType(FloatingActionButton),
-      timeout: const Duration(seconds: 30),
-    );
-    // ignore: avoid_print
-    print('FLOW step5 back at history: $backHome');
-    expect(backHome, isTrue, reason: 'save did not return to My Scans');
-
-    final scans = await repository.all();
-    // ignore: avoid_print
-    print('FLOW scans in history: ${scans.length}');
-    expect(scans, isNotEmpty, reason: 'saved scan was not recorded in history');
-  });
-
-  testWidgets('capture flow can export a PDF', (tester) async {
-    final repository = SqfliteScanRepository();
-    final documents = await getApplicationDocumentsDirectory();
-    final storage = Directory(p.join(documents.path, 'scans'));
-    await storage.create(recursive: true);
-    final exporter =
-        ScanExporter(repository: repository, storageDirectory: storage);
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: HistoryScreen(repository: repository, exporter: exporter),
-      ),
-    );
-    await tester.tap(find.byType(FloatingActionButton));
+  /// Capture one page and leave the app on the review stage.
+  Future<void> captureToReview(WidgetTester tester) async {
+    await tester.tap(find.byIcon(Icons.photo_camera));
     expect(
       await waitFor(tester, find.byType(CameraPreview)),
       isTrue,
-      reason: 'camera preview never became visible',
+      reason: 'camera preview never appeared',
     );
-    await tester.pump(const Duration(seconds: 1));
-    await tester.tap(find.byIcon(Icons.camera));
-    final ready = await waitForEnabled(
-      tester,
-      find.widgetWithText(FilledButton, 'Done'),
-    );
-    expect(ready, isTrue, reason: 'crop step never became ready');
-    await tester.tap(find.widgetWithText(FilledButton, 'Done'));
-    expect(await waitFor(tester, find.text('Export PDF')), isTrue);
-    await tester.tap(find.text('Export PDF'));
-    final backHome = await waitFor(
-      tester,
-      find.byType(FloatingActionButton),
-      timeout: const Duration(seconds: 30),
-    );
-    final scans = await repository.all();
-    // ignore: avoid_print
-    print('PDFFLOW back=$backHome scans=${scans.length} '
-        'pdfs=${scans.where((s) => s.isPdf).length}');
-    expect(backHome, isTrue, reason: 'PDF export did not return to My Scans');
+    // Let the detector find the page so the crop stage starts from a quad.
+    await tester.pump(const Duration(seconds: 2));
+
+    await tester.tap(shutter);
     expect(
-      scans.any((entry) => entry.isPdf),
+      await waitFor(tester, find.text('Review and Edit')),
       isTrue,
-      reason: 'PDF export was not recorded in history',
+      reason: 'the shutter did not reach the crop stage',
     );
+    // The crop stage decodes and detects before its hero does anything.
+    expect(
+      await waitUntilGone(tester, find.byType(CircularProgressIndicator)),
+      isTrue,
+      reason: 'the crop preview never finished loading',
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+
+    await tester.tap(find.text('Review and Edit'));
+    expect(
+      await waitFor(tester, find.text('Finish')),
+      isTrue,
+      reason: 'the crop stage did not reach review',
+    );
+  }
+
+  testWidgets('capture reaches review and saves an image', (tester) async {
+    final repository = await pumpApp(tester);
+    final before = await repository.all();
+
+    await captureToReview(tester);
+
+    await tester.tap(find.text('Finish'));
+    expect(
+      await waitFor(tester, find.text('My Scans')),
+      isTrue,
+      reason: 'Finish did not return to My Scans',
+    );
+
+    final after = await repository.all();
+    final saved = after.length - before.length;
+    // ignore: avoid_print
+    print('FLOW image: +$saved rows, newest=${after.first.title} '
+        '${after.first.kind} ${p.basename(after.first.filePath)}');
+    expect(saved, 1, reason: 'an image save should record exactly one row');
+    expect(after.first.isPdf, isFalse);
+    expect(File(after.first.filePath).existsSync(), isTrue);
+    expect(after.first.thumbPath, isNotNull);
+  });
+
+  testWidgets('a PDF save records its own tile', (tester) async {
+    final repository = await pumpApp(tester);
+    final before = await repository.all();
+
+    await captureToReview(tester);
+
+    await tester.tap(find.text('Options'));
+    await waitFor(tester, find.text('TITLE'));
+    // The SAVE AS rows sit below the 160 dp peek.
+    await tester.drag(find.text('TITLE'), const Offset(0, -400));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('PDF'));
+    await tester.pump(const Duration(milliseconds: 400));
+    // Tap the scrim above the sheet to close it.
+    await tester.tapAt(const Offset(20, 40));
+    await tester.pump(const Duration(milliseconds: 600));
+
+    await tester.tap(find.text('Finish'));
+    expect(
+      await waitFor(tester, find.text('My Scans')),
+      isTrue,
+      reason: 'Finish did not return to My Scans',
+    );
+
+    final after = await repository.all();
+    final added = after.sublist(0, after.length - before.length);
+    // ignore: avoid_print
+    print('FLOW pdf: ${added.map((entry) => '${entry.kind}:'
+        '${p.basename(entry.filePath)}').join(', ')}');
+    expect(added, hasLength(2), reason: 'image and PDF each get a record');
+    expect(added.where((entry) => entry.isPdf), hasLength(1));
+    final ScanEntry pdf = added.firstWhere((entry) => entry.isPdf);
+    expect(File(pdf.filePath).existsSync(), isTrue);
+    expect(p.basename(pdf.filePath), endsWith('.pdf'));
   });
 }

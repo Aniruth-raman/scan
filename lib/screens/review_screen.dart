@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gal/gal.dart';
 
+import '../design/lens_hero_button.dart';
 import '../design/lens_tokens.dart';
 import '../services/native_image_kit.dart';
 import '../services/scan_exporter.dart';
@@ -567,51 +568,16 @@ class _ReviewScreenState extends State<ReviewScreen> {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: LensSpace.xs),
               child: Center(
-                child: SizedBox(
-                  height: LensSize.heroHeight,
-                  child: Semantics(
-                    button: true,
-                    enabled: !_busy,
-                    label: 'Finish',
-                    child: Material(
-                      color: _busy ? LensColor.disabled : LensColor.accent,
-                      borderRadius: BorderRadius.circular(LensRadius.hero),
-                      clipBehavior: Clip.antiAlias,
-                      child: InkWell(
-                        onTap: _busy ? null : _finish,
-                        child: Center(
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _busy
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: LensColor.gray11,
-                                      ),
-                                    )
-                                  : const Icon(
-                                      Icons.check,
-                                      size: LensSize.icon,
-                                      color: LensColor.gray11,
-                                    ),
-                              const SizedBox(width: LensSpace.xs),
-                              Text(
-                                _busy ? 'Saving…' : 'Finish',
-                                style: const TextStyle(
-                                  fontSize: LensType.body,
-                                  fontWeight: FontWeight.w500,
-                                  color: LensColor.gray11,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
+                child: LensHeroButton(
+                  label: 'Finish',
+                  busy: _busy,
+                  busyLabel: 'Saving…',
+                  leading: const Icon(
+                    Icons.check,
+                    size: LensSize.icon,
+                    color: LensColor.gray11,
                   ),
+                  onTap: _finish,
                 ),
               ),
             ),

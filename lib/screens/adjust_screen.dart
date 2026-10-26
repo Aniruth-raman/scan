@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../design/lens_hero_button.dart';
 import '../design/lens_tokens.dart';
 import '../services/document_image_ops.dart';
 import '../services/document_detector.dart';
@@ -613,41 +614,16 @@ class _AdjustScreenState extends State<AdjustScreen> {
   }
 
   Widget _buildHero() {
-    return Semantics(
-      button: true,
-      label: 'Review and edit',
-      child: SizedBox(
-        height: LensSize.heroHeight,
-        child: Material(
-          color: LensColor.accent,
-          borderRadius: BorderRadius.circular(LensRadius.hero),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: _applying ? null : () => _apply(),
-            child: Center(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _applying ? 'Preparing…' : 'Review and Edit',
-                    style: const TextStyle(
-                      fontSize: LensType.body,
-                      fontWeight: FontWeight.w500,
-                      color: LensColor.gray10,
-                    ),
-                  ),
-                  const SizedBox(width: LensSpace.xs),
-                  const Icon(
-                    Icons.chevron_right,
-                    size: 18,
-                    color: LensColor.gray10,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
+    return LensHeroButton(
+      label: 'Review and Edit',
+      busy: _applying,
+      busyLabel: 'Preparing…',
+      trailing: const Icon(
+        Icons.chevron_right,
+        size: 18,
+        color: LensColor.gray10,
       ),
+      onTap: () => _apply(),
     );
   }
 }

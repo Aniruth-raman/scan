@@ -743,14 +743,18 @@ class _CarouselLabel extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: LensSpace.xs),
           child: Center(
-            child: Text(
-              mode.label,
+            // Selection eases instead of snapping: the carousel is the stage's
+            // main type cue, so it carries the state change.
+            child: AnimatedDefaultTextStyle(
+              duration: LensMotion.fast,
+              curve: LensMotion.curve,
               style: TextStyle(
                 fontSize: LensType.label,
                 letterSpacing: LensType.carouselTracking,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                 color: selected ? LensColor.gray0 : LensColor.gray6,
               ),
+              child: Text(mode.label),
             ),
           ),
         ),
