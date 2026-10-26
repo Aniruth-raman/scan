@@ -75,10 +75,13 @@ class ScanExporter {
     return repository.insert(entry);
   }
 
-  /// Writes one PDF for [pages] into shared Downloads, named after [title], and
-  /// returns the path it landed at (`Download/Lens Lite/<title>.pdf`).
+  /// Writes one PDF for [pages] named after [title] in two places, the way the
+  /// JPEG works:
   ///
-  /// Not recorded in the history: the scan itself is the image.
+  ///  * a record in app storage, which is the tile in "My Scans", and
+  ///  * an export in `Download/Lens Lite`, which any file manager can open.
+  ///
+  /// Returns the export's location (`Download/Lens Lite/<title>.pdf`).
   Future<String> savePdf(
     List<Uint8List> pages, {
     required String title,
@@ -86,16 +89,22 @@ class ScanExporter {
     if (pages.isEmpty) {
       throw ArgumentError.value(pages, 'pages', 'must not be empty');
     }
+    final now = DateTime.now();
+    final file = _freeFile(title, '.pdf');
     final name = fileStem(title);
+
+    Future<({String name, String location})> publish() =>
+        NativeImageKit.writePdf(
+          pages: pages,
+          name: name,
+          folder: pdfFolder,
+          recordPath: file.path,
+        );
+
+    ({String name, String location}) pdf;
     try {
-      final pdf = await NativeImageKit.writePdf(
-        pages: pages,
-        name: name,
-        folder: pdfFolder,
-      );
-      return '${pdf.location}/${pdf.name}';
-    } on PlatformException catch (error) {
-      // API 24-28 writes to the public Downloads directory, which needs the
+      pdf = await publish();
+    } on PlatformException catch (error) {      // API 24-28 writes to the public Downloads directory, which needs the
       // legacy storage grant. Q and later go through MediaStore, no grant.
       if (error.code != 'storage_permission') rethrow;
       if (!await Permission.storage.request().isGranted) {
@@ -103,13 +112,20 @@ class ScanExporter {
           'Storage permission is required to save the PDF.',
         );
       }
-      final pdf = await NativeImageKit.writePdf(
-        pages: pages,
-        name: name,
-        folder: pdfFolder,
-      );
-      return '${pdf.location}/${pdf.name}';
+      pdf = await publish();
     }
+
+    final thumbPath = await _writeThumbnail(pages.first, now);
+    await repository.insert(
+      ScanEntry(
+        title: title,
+        kind: 'pdf',
+        filePath: file.path,
+        thumbPath: thumbPath,
+        createdAt: now,
+      ),
+    );
+    return '${pdf.location}/${pdf.name}';
   }
 
   /// Removes a scan from history and deletes its files from disk.

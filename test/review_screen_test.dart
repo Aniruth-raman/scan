@@ -322,7 +322,7 @@ void main() {
     });
   });
 
-  testWidgets('a PDF export takes the scan name and adds no second record',
+  testWidgets('image + PDF produce one tile each, both named after the scan',
       (tester) async {
     await onAndroid(() async {
       ReviewResult? result;
@@ -352,11 +352,52 @@ void main() {
         'Saved to Gallery · PDF: Download/Lens Lite/Q4 report.pdf',
       );
 
-      // The JPEG is the record; the document is only an export.
+      // Both targets produce their own record, like the original: a JPEG tile
+      // and a PDF tile.
+      final scans = await repository.all();
+      expect(scans, hasLength(2));
+      expect(
+        scans.map((entry) => entry.kind).toSet(),
+        {'image', 'pdf'},
+      );
+      expect(
+        p.basename(scans.firstWhere((entry) => entry.isPdf).filePath),
+        'Q4 report.pdf',
+      );
+      expect(
+        p.basename(scans.firstWhere((entry) => !entry.isPdf).filePath),
+        'Q4 report.jpg',
+      );
+    });
+  });
+
+  testWidgets('a PDF-only save still produces its tile', (tester) async {
+    await onAndroid(() async {
+      ReviewResult? result;
+      await pumpReview(
+        tester,
+        <Uint8List>[fakeJpeg()],
+        onResult: (value) => result = value,
+      );
+      await renameVia(tester, 'Q4 report');
+
+      await tester.tap(find.text('Options'));
+      await tester.pumpAndSettle();
+      await tester.drag(find.text('TITLE'), const Offset(0, -400));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Image')); // untick the JPEG
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('PDF'));
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(20, 40));
+      await tester.pumpAndSettle();
+
+      await finish(tester);
+
       final scans = await repository.all();
       expect(scans, hasLength(1));
-      expect(scans.single.kind, 'image');
-      expect(p.basename(scans.single.filePath), 'Q4 report.jpg');
+      expect(scans.single.isPdf, isTrue);
+      expect(result?.message, 'PDF: Download/Lens Lite/Q4 report.pdf');
     });
   });
 }

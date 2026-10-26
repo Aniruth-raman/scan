@@ -223,9 +223,13 @@ abstract final class NativeImageKit {
 
   /// Publishes a full-bleed multi-page PDF into shared Downloads and returns
   /// where it landed: the collection (`Download/Lens Lite`) and the file name.
+  ///
+  /// [recordPath] additionally receives the same bytes, so the app keeps its own
+  /// copy to list and open; the shared copy is the export.
   static Future<({String name, String location})> writePdf({
     required List<Uint8List> pages,
     required String name,
+    required String recordPath,
     String folder = 'Lens Lite',
   }) async {
     _requireAndroid();
@@ -233,6 +237,7 @@ abstract final class NativeImageKit {
       'pages': pages,
       'name': name,
       'folder': folder,
+      'recordPath': recordPath,
     });
     if (result == null) throw StateError('writePdf returned no result');
     return (

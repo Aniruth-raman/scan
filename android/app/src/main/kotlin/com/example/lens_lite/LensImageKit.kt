@@ -299,8 +299,11 @@ class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandl
     // ------------------------------------------------------------- writePdf --
 
     /**
-     * Full-bleed multi-page PDF sized to each page's own aspect ratio,
-     * published to shared Downloads so any file manager can open it.
+     * Full-bleed multi-page PDF sized to each page's own aspect ratio.
+     *
+     * The bytes go to two places: `recordPath`, the app's own copy that the
+     * scan list opens, and `MediaStore.Downloads`, so the document is also
+     * reachable from any file manager.
      *
      * The pages arrive as finished JPEGs, so they are embedded as `DCTDecode`
      * image XObjects rather than decoded and re-compressed: the PDF costs
@@ -313,6 +316,7 @@ class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandl
             ?: throw IllegalArgumentException("pages required")
         val name = call.argument<String>("name")?.takeIf { it.isNotBlank() } ?: "Scan"
         val folder = call.argument<String>("folder")?.takeIf { it.isNotBlank() } ?: "Lens Lite"
+        val recordPath = call.argument<String>("recordPath")?.takeIf { it.isNotBlank() }
         if (pages.isEmpty()) throw IllegalArgumentException("pages must not be empty")
 
         val images = pages.map { jpegInfo(it) }
@@ -387,17 +391,28 @@ class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandl
                 "startxref\n$xrefOffset\n%%EOF\n"
         )
 
-        return publishPdf(out.toByteArray(), name, folder)
+        return publishPdf(out.toByteArray(), name, folder, recordPath)
     }
 
     /**
-     * Publishes the document through `MediaStore.Downloads` so it is visible in
-     * Files, and returns the collection and file name it landed under.
+     * Writes the app's own copy, then publishes the same bytes through
+     * `MediaStore.Downloads` so the export is visible in Files, and returns the
+     * collection and file name it landed under.
      *
      * API 28 and below have no Downloads collection: the file goes into the
      * public Downloads directory instead, which needs the legacy storage grant.
      */
-    private fun publishPdf(bytes: ByteArray, name: String, folder: String): Map<String, Any> {
+    private fun publishPdf(
+        bytes: ByteArray,
+        name: String,
+        folder: String,
+        recordPath: String?
+    ): Map<String, Any> {
+        if (recordPath != null) {
+            val record = File(recordPath)
+            record.parentFile?.mkdirs()
+            record.writeBytes(bytes)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val resolver = context.contentResolver
             val values = ContentValues().apply {

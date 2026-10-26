@@ -54,6 +54,13 @@ void main() {
           pdfCalls.add(arguments);
           final name = arguments['name'] as String;
           final folder = arguments['folder'] as String;
+          // The native side writes the record copy as it publishes the export.
+          final record = arguments['recordPath'] as String?;
+          if (record != null) {
+            File(record)
+              ..parent.createSync(recursive: true)
+              ..writeAsBytesSync(<int>[...'%PDF-1.4\n'.codeUnits]);
+          }
           return <String, dynamic>{
             'name': '$name.pdf',
             'location': 'Download/$folder',
@@ -108,7 +115,7 @@ void main() {
     expect(ScanExporter.fileStem('.hidden.'), 'hidden');
   });
 
-  test('savePdf publishes to Downloads and records nothing', () async {
+  test('savePdf keeps a record and publishes a copy to Downloads', () async {
     final pages = <Uint8List>[fakeJpeg(), fakeJpeg(), fakeJpeg()];
     final path = await exporter.savePdf(pages, title: 'Three pages');
 
@@ -118,8 +125,29 @@ void main() {
     expect(pdfCalls.single['name'], 'Three pages');
     expect(pdfCalls.single['folder'], 'Lens Lite');
 
-    // The image is the record; an export is not a row in My Scans.
-    expect(await repository.all(), isEmpty);
+    // The app's own copy is the tile; the Downloads copy is the export.
+    final scans = await repository.all();
+    expect(scans, hasLength(1));
+    expect(scans.single.kind, 'pdf');
+    expect(scans.single.title, 'Three pages');
+    expect(p.basename(scans.single.filePath), 'Three pages.pdf');
+    expect(pdfCalls.single['recordPath'], scans.single.filePath);
+    expect(File(scans.single.filePath).existsSync(), isTrue);
+    expect(scans.single.thumbPath, isNotNull);
+  });
+
+  test('a repeated PDF title does not overwrite the earlier record', () async {
+    await exporter.savePdf(<Uint8List>[fakeJpeg()], title: 'Report');
+    final second = await exporter.savePdf(<Uint8List>[fakeJpeg()], title: 'Report');
+
+    final scans = await repository.all();
+    expect(scans, hasLength(2));
+    expect(
+      scans.map((entry) => p.basename(entry.filePath)).toSet(),
+      {'Report.pdf', 'Report (2).pdf'},
+    );
+    // The export keeps the plain name; MediaStore dedupes its own copies.
+    expect(second, 'Download/Lens Lite/Report.pdf');
   });
 
   test('savePdf rejects an empty page list', () {
