@@ -117,7 +117,8 @@ class QuadSmoother {
       for (var i = 0; i < 4; i++) {
         final point = to[(i + shift) % 4];
         final anchor = from[i];
-        cost += (point.x - anchor.x) * (point.x - anchor.x) +
+        cost +=
+            (point.x - anchor.x) * (point.x - anchor.x) +
             (point.y - anchor.y) * (point.y - anchor.y);
       }
       if (cost < bestCost) {

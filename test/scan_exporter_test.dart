@@ -13,9 +13,9 @@ Uint8List fakeJpeg() {
   return Uint8List.fromList(img.encodeJpg(image));
 }
 
-/// PDF assembly and thumbnailing live in `LensImageKit` on the Android side.
-/// The unit tests stand in for the platform with a channel mock so the
-/// bookkeeping this class actually owns stays covered.
+/// PDF assembly, publishing and thumbnailing live in `LensImageKit` on the
+/// Android side. The unit tests stand in for the platform with a channel mock
+/// so the bookkeeping this class actually owns stays covered.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -24,6 +24,8 @@ void main() {
   late InMemoryScanRepository repository;
   late ScanExporter exporter;
   late List<Map<Object?, Object?>> pdfCalls;
+  late List<Map<Object?, Object?>> imageCalls;
+  late List<List<String>> deletedUris;
 
   setUpAll(() {
     // NativeImageKit is Android-only; the guard reads defaultTargetPlatform.
@@ -39,36 +41,55 @@ void main() {
     repository = InMemoryScanRepository();
     exporter = ScanExporter(repository: repository, storageDirectory: tempDir);
     pdfCalls = <Map<Object?, Object?>>[];
+    imageCalls = <Map<Object?, Object?>>[];
+    deletedUris = <List<String>>[];
 
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
-      switch (call.method) {
-        case 'thumbnail':
-          return <String, dynamic>{
-            'bytes': Uint8List.fromList(<int>[1, 2, 3]),
-            'width': 32,
-            'height': 24,
-          };
-        case 'writePdf':
-          final arguments = call.arguments as Map<Object?, Object?>;
-          pdfCalls.add(arguments);
-          final name = arguments['name'] as String;
-          final folder = arguments['folder'] as String;
-          // The native side writes the record copy as it publishes the export.
-          final record = arguments['recordPath'] as String?;
-          if (record != null) {
-            File(record)
-              ..parent.createSync(recursive: true)
-              ..writeAsBytesSync(<int>[...'%PDF-1.4\n'.codeUnits]);
+          switch (call.method) {
+            case 'thumbnail':
+              return <String, dynamic>{
+                'bytes': Uint8List.fromList(<int>[1, 2, 3]),
+                'width': 32,
+                'height': 24,
+              };
+            case 'publishImage':
+              final arguments = call.arguments as Map<Object?, Object?>;
+              imageCalls.add(arguments);
+              final name = arguments['name'] as String;
+              return <String, dynamic>{
+                'uri': 'content://media/external/images/media/$name',
+                'name': '$name.jpg',
+                'location': 'Pictures/${arguments['folder']}',
+              };
+            case 'writePdf':
+              final arguments = call.arguments as Map<Object?, Object?>;
+              pdfCalls.add(arguments);
+              final name = arguments['name'] as String;
+              final folder = arguments['folder'] as String;
+              // The native side writes the record copy as it publishes the export.
+              final record = arguments['recordPath'] as String?;
+              if (record != null) {
+                File(record)
+                  ..parent.createSync(recursive: true)
+                  ..writeAsBytesSync(<int>[...'%PDF-1.4\n'.codeUnits]);
+              }
+              return <String, dynamic>{
+                'uri': 'content://media/external/downloads/$name',
+                'name': '$name.pdf',
+                'location': 'Download/$folder',
+              };
+            case 'deleteShared':
+              deletedUris.add(
+                ((call.arguments as Map<Object?, Object?>)['uris']!
+                        as List<Object?>)
+                    .cast<String>(),
+              );
+              return 1;
+            default:
+              return null;
           }
-          return <String, dynamic>{
-            'name': '$name.pdf',
-            'location': 'Download/$folder',
-          };
-        default:
-          return null;
-      }
-    });
+        });
   });
 
   tearDown(() async {
@@ -87,6 +108,10 @@ void main() {
     expect(File(entry.filePath).existsSync(), isTrue);
     expect(entry.thumbPath, isNotNull);
     expect(File(entry.thumbPath!).existsSync(), isTrue);
+    // The gallery copy is published by us, so the entry remembers its URI.
+    expect(entry.sharedUri, 'content://media/external/images/media/My capture');
+    expect(imageCalls.single['name'], 'My capture');
+    expect(imageCalls.single['folder'], 'Lens Lite');
 
     final history = await repository.all();
     expect(history, hasLength(1));
@@ -107,10 +132,7 @@ void main() {
       ScanExporter.fileStem('Scan 24 Oct 2026, 10:32'),
       'Scan 24 Oct 2026, 10:32',
     );
-    expect(
-      ScanExporter.fileStem('a/b\\c*d?e"f<g>h|i'),
-      'a b c d e f g h i',
-    );
+    expect(ScanExporter.fileStem('a/b\\c*d?e"f<g>h|i'), 'a b c d e f g h i');
     expect(ScanExporter.fileStem('   '), 'Scan');
     expect(ScanExporter.fileStem('.hidden.'), 'hidden');
   });
@@ -125,7 +147,6 @@ void main() {
     expect(pdfCalls.single['name'], 'Three pages');
     expect(pdfCalls.single['folder'], 'Lens Lite');
 
-    // The app's own copy is the tile; the Downloads copy is the export.
     final scans = await repository.all();
     expect(scans, hasLength(1));
     expect(scans.single.kind, 'pdf');
@@ -134,18 +155,24 @@ void main() {
     expect(pdfCalls.single['recordPath'], scans.single.filePath);
     expect(File(scans.single.filePath).existsSync(), isTrue);
     expect(scans.single.thumbPath, isNotNull);
+    expect(
+      scans.single.sharedUri,
+      'content://media/external/downloads/Three pages',
+    );
   });
 
   test('a repeated PDF title does not overwrite the earlier record', () async {
     await exporter.savePdf(<Uint8List>[fakeJpeg()], title: 'Report');
-    final second = await exporter.savePdf(<Uint8List>[fakeJpeg()], title: 'Report');
+    final second = await exporter.savePdf(<Uint8List>[
+      fakeJpeg(),
+    ], title: 'Report');
 
     final scans = await repository.all();
     expect(scans, hasLength(2));
-    expect(
-      scans.map((entry) => p.basename(entry.filePath)).toSet(),
-      {'Report.pdf', 'Report (2).pdf'},
-    );
+    expect(scans.map((entry) => p.basename(entry.filePath)).toSet(), {
+      'Report.pdf',
+      'Report (2).pdf',
+    });
     // The export keeps the plain name; MediaStore dedupes its own copies.
     expect(second, 'Download/Lens Lite/Report.pdf');
   });
@@ -157,12 +184,27 @@ void main() {
     );
   });
 
-  test('delete removes the row and the files from disk', () async {
-    final entry = await exporter.saveImage(fakeJpeg(), title: 'Doomed');
-    await exporter.delete(entry);
+  test(
+    'deleting a scan removes its record, its files and its export',
+    () async {
+      final entry = await exporter.saveImage(fakeJpeg(), title: 'Doomed');
+      await exporter.delete(entry);
 
-    expect(File(entry.filePath).existsSync(), isFalse);
-    expect(File(entry.thumbPath!).existsSync(), isFalse);
-    expect(await repository.all(), isEmpty);
+      expect(File(entry.filePath).existsSync(), isFalse);
+      expect(File(entry.thumbPath!).existsSync(), isFalse);
+      expect(await repository.all(), isEmpty);
+      expect(deletedUris, hasLength(1));
+      expect(deletedUris.single, <String>[entry.sharedUri!]);
+    },
+  );
+
+  test('removing an imported file only hides it', () async {
+    await exporter.deleteImported('content://media/external/images/media/42');
+
+    expect(await repository.hiddenMedia(), <String>{
+      'content://media/external/images/media/42',
+    });
+    // Nothing is deleted on disk: the file was never ours.
+    expect(deletedUris, isEmpty);
   });
 }

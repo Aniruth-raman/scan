@@ -37,7 +37,8 @@ class LensHeroButton extends StatefulWidget {
 class _LensHeroButtonState extends State<LensHeroButton> {
   bool _pressed = false;
 
-  String get _label => widget.busy ? (widget.busyLabel ?? widget.label) : widget.label;
+  String get _label =>
+      widget.busy ? (widget.busyLabel ?? widget.label) : widget.label;
 
   @override
   Widget build(BuildContext context) {
@@ -60,9 +61,13 @@ class _LensHeroButtonState extends State<LensHeroButton> {
               // The pill itself owns the press, so the scale never fights the
               // ink ripple for the gesture.
               onTap: enabled ? widget.onTap : null,
-              onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
+              onTapDown: enabled
+                  ? (_) => setState(() => _pressed = true)
+                  : null,
               onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
-              onTapCancel: enabled ? () => setState(() => _pressed = false) : null,
+              onTapCancel: enabled
+                  ? () => setState(() => _pressed = false)
+                  : null,
               child: Center(
                 child: Row(
                   mainAxisSize: MainAxisSize.min,

@@ -19,9 +19,8 @@ class ScanViewerScreen extends StatelessWidget {
       );
     } catch (error) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open PDF: $error')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Could not open PDF: $error')));
     }
   }
 
@@ -41,10 +40,7 @@ class ScanViewerScreen extends StatelessWidget {
           : Center(
               child: InteractiveViewer(
                 maxScale: 6,
-                child: Image.file(
-                  File(entry.filePath),
-                  fit: BoxFit.contain,
-                ),
+                child: Image.file(File(entry.filePath), fit: BoxFit.contain),
               ),
             ),
     );

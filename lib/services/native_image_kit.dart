@@ -94,11 +94,11 @@ List<double> _saturation(double saturation) {
 }
 
 List<double> _contrast(double scale, double translate) => <double>[
-      scale, 0, 0, 0, translate, //
-      0, scale, 0, 0, translate, //
-      0, 0, scale, 0, translate, //
-      0, 0, 0, 1, 0, //
-    ];
+  scale, 0, 0, 0, translate, //
+  0, scale, 0, 0, translate, //
+  0, 0, scale, 0, translate, //
+  0, 0, 0, 1, 0, //
+];
 
 /// `outer * inner` for 4x5 affine colour matrices.
 List<double> _concat(List<double> outer, List<double> inner) {
@@ -116,6 +116,41 @@ List<double> _concat(List<double> outer, List<double> inner) {
   return out;
 }
 
+/// One file sitting in the app's shared folders — captured here, or dropped in
+/// from somewhere else (USB, another app, a download).
+@immutable
+class SharedMedia {
+  const SharedMedia({
+    required this.uri,
+    required this.name,
+    required this.mime,
+    required this.modified,
+    required this.size,
+    this.thumb,
+  });
+
+  final String uri;
+
+  /// File name including its extension.
+  final String name;
+  final String mime;
+  final DateTime modified;
+  final int size;
+
+  /// 240 px JPEG preview, images only.
+  final Uint8List? thumb;
+
+  bool get isPdf => mime == 'application/pdf';
+
+  String get title {
+    final dot = name.lastIndexOf('.');
+    return dot > 0 ? name.substring(0, dot) : name;
+  }
+}
+
+/// Optionally-published result: where the shared copy landed.
+typedef PublishedFile = ({String uri, String name, String location});
+
 /// Thin bridge to [LensImageKit] on the Android side.
 ///
 /// Decoding, EXIF orientation, perspective rectification, tone mapping, JPEG
@@ -125,7 +160,8 @@ List<double> _concat(List<double> outer, List<double> inner) {
 abstract final class NativeImageKit {
   static const MethodChannel _channel = MethodChannel('lens_lite/image');
 
-  static bool get isSupported => defaultTargetPlatform == TargetPlatform.android;
+  static bool get isSupported =>
+      defaultTargetPlatform == TargetPlatform.android;
 
   static void _requireAndroid() {
     if (!isSupported) {
@@ -195,12 +231,15 @@ abstract final class NativeImageKit {
     int quality = 95,
   }) async {
     _requireAndroid();
-    final result = await _channel.invokeMapMethod<String, dynamic>('transform', {
-      'bytes': bytes,
-      'quarterTurns': quarterTurns,
-      'filter': filter.id,
-      'quality': quality,
-    });
+    final result = await _channel.invokeMapMethod<String, dynamic>(
+      'transform',
+      {
+        'bytes': bytes,
+        'quarterTurns': quarterTurns,
+        'filter': filter.id,
+        'quality': quality,
+      },
+    );
     if (result == null) throw StateError('transform returned no result');
     return result['bytes'] as Uint8List;
   }
@@ -212,13 +251,61 @@ abstract final class NativeImageKit {
     int quality = 80,
   }) async {
     _requireAndroid();
-    final result = await _channel.invokeMapMethod<String, dynamic>('thumbnail', {
-      'bytes': bytes,
-      'maxEdge': maxEdge,
-      'quality': quality,
-    });
+    final result = await _channel.invokeMapMethod<String, dynamic>(
+      'thumbnail',
+      {'bytes': bytes, 'maxEdge': maxEdge, 'quality': quality},
+    );
     if (result == null) throw StateError('thumbnail returned no result');
     return result['bytes'] as Uint8List;
+  }
+
+  /// Publishes a finished page into the gallery album and returns the content
+  /// URI, which the scan list keeps so deletes reach exactly this file.
+  static Future<PublishedFile> publishImage(
+    Uint8List bytes, {
+    required String name,
+    String folder = 'Lens Lite',
+  }) async {
+    _requireAndroid();
+    final result = await _channel.invokeMapMethod<String, dynamic>(
+      'publishImage',
+      {'bytes': bytes, 'name': name, 'folder': folder},
+    );
+    if (result == null) throw StateError('publishImage returned no result');
+    return (
+      uri: result['uri'] as String,
+      name: result['name'] as String,
+      location: result['location'] as String,
+    );
+  }
+
+  /// Lists both shared folders: the gallery album and the Downloads folder.
+  static Future<List<SharedMedia>> listShared() async {
+    _requireAndroid();
+    final result = await _channel.invokeMethod<List<Object?>>('listShared');
+    if (result == null) return const <SharedMedia>[];
+    return [
+      for (final item in result)
+        if (item is Map)
+          SharedMedia(
+            uri: item['uri'] as String,
+            name: item['name'] as String,
+            mime: item['mime'] as String,
+            modified: DateTime.fromMillisecondsSinceEpoch(
+              item['modified'] as int,
+            ),
+            size: item['size'] as int,
+            thumb: item['thumb'] as Uint8List?,
+          ),
+    ];
+  }
+
+  /// Removes published files by URI and returns how many went.
+  static Future<int> deleteShared(List<String> uris) async {
+    if (uris.isEmpty) return 0;
+    _requireAndroid();
+    return await _channel.invokeMethod<int>('deleteShared', {'uris': uris}) ??
+        0;
   }
 
   /// Publishes a full-bleed multi-page PDF into shared Downloads and returns
@@ -226,7 +313,7 @@ abstract final class NativeImageKit {
   ///
   /// [recordPath] additionally receives the same bytes, so the app keeps its own
   /// copy to list and open; the shared copy is the export.
-  static Future<({String name, String location})> writePdf({
+  static Future<({String uri, String name, String location})> writePdf({
     required List<Uint8List> pages,
     required String name,
     required String recordPath,
@@ -241,6 +328,7 @@ abstract final class NativeImageKit {
     });
     if (result == null) throw StateError('writePdf returned no result');
     return (
+      uri: result['uri'] as String,
       name: result['name'] as String,
       location: result['location'] as String,
     );

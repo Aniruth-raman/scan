@@ -51,8 +51,7 @@ class _CameraScreenState extends State<CameraScreen> {
   String? _error;
   _CaptureMode _mode = _CaptureMode.scan;
 
-  final DocumentDetectionWorker _detector =
-      DocumentDetectionWorker.instance;
+  final DocumentDetectionWorker _detector = DocumentDetectionWorker.instance;
   final QuadSmoother _smoother = QuadSmoother();
   DocumentQuad? _quad;
   bool _analyzing = false;
@@ -101,8 +100,9 @@ class _CameraScreenState extends State<CameraScreen> {
 
   Future<void> _start() async {
     try {
-      final cameras =
-          await availableCameras().timeout(const Duration(seconds: 15));
+      final cameras = await availableCameras().timeout(
+        const Duration(seconds: 15),
+      );
       if (cameras.isEmpty) {
         if (!mounted) return;
         setState(() {
@@ -111,8 +111,9 @@ class _CameraScreenState extends State<CameraScreen> {
         });
         return;
       }
-      final wanted =
-          _useFront ? CameraLensDirection.front : CameraLensDirection.back;
+      final wanted = _useFront
+          ? CameraLensDirection.front
+          : CameraLensDirection.back;
       final description = cameras.firstWhere(
         (camera) => camera.lensDirection == wanted,
         orElse: () => cameras.first,
@@ -212,7 +213,11 @@ class _CameraScreenState extends State<CameraScreen> {
   ///
   /// Steadiness is measured on the *drawn* quad, so the hold only starts when
   /// the easing has converged — a document being moved keeps resetting it.
-  void _trackSteadiness(DocumentQuad? previous, DocumentQuad? current, Size frame) {
+  void _trackSteadiness(
+    DocumentQuad? previous,
+    DocumentQuad? current,
+    Size frame,
+  ) {
     if (!_autoCapture ||
         _capturing ||
         _moreOpen ||
@@ -222,7 +227,9 @@ class _CameraScreenState extends State<CameraScreen> {
       _steadySince = null;
       return;
     }
-    final diagonal = math.sqrt(frame.width * frame.width + frame.height * frame.height);
+    final diagonal = math.sqrt(
+      frame.width * frame.width + frame.height * frame.height,
+    );
     if (current.distanceTo(previous) > diagonal * _steadyDrift) {
       _steadySince = null;
       return;
@@ -357,10 +364,10 @@ class _CameraScreenState extends State<CameraScreen> {
   }
 
   IconData get _flashIcon => switch (_flash) {
-        FlashMode.auto => Icons.flash_auto,
-        FlashMode.always => Icons.flash_on,
-        _ => Icons.flash_off,
-      };
+    FlashMode.auto => Icons.flash_auto,
+    FlashMode.always => Icons.flash_on,
+    _ => Icons.flash_off,
+  };
 
   @override
   void dispose() {
@@ -390,10 +397,7 @@ class _CameraScreenState extends State<CameraScreen> {
             Expanded(
               child: Stack(
                 fit: StackFit.expand,
-                children: [
-                  _buildStage(),
-                  _buildTopChrome(),
-                ],
+                children: [_buildStage(), _buildTopChrome()],
               ),
             ),
             _buildBottomChrome(bottomInset),
@@ -567,8 +571,8 @@ class _CameraScreenState extends State<CameraScreen> {
 
     final progress = holding
         ? (DateTime.now().difference(_steadySince!).inMilliseconds /
-                _steadyHold.inMilliseconds)
-            .clamp(0.0, 1.0)
+                  _steadyHold.inMilliseconds)
+              .clamp(0.0, 1.0)
         : 0.0;
 
     return AnimatedSwitcher(
@@ -601,7 +605,9 @@ class _CameraScreenState extends State<CameraScreen> {
                         child: LinearProgressIndicator(
                           value: progress,
                           minHeight: 1,
-                          backgroundColor: LensColor.white70.withValues(alpha: 0.3),
+                          backgroundColor: LensColor.white70.withValues(
+                            alpha: 0.3,
+                          ),
                           color: LensColor.accent,
                         ),
                       ),
@@ -663,7 +669,10 @@ class _CameraScreenState extends State<CameraScreen> {
                 ),
                 subtitle: const Text(
                   'Take the shot once the page holds still',
-                  style: TextStyle(color: LensColor.gray6, fontSize: LensType.label),
+                  style: TextStyle(
+                    color: LensColor.gray6,
+                    fontSize: LensType.label,
+                  ),
                 ),
                 value: _autoCapture,
                 activeThumbColor: LensColor.accent,
@@ -1000,7 +1009,10 @@ class _QuadOutlinePainter extends CustomPainter {
     final path = Path()
       ..moveTo(map(documentQuad.topLeft).dx, map(documentQuad.topLeft).dy)
       ..lineTo(map(documentQuad.topRight).dx, map(documentQuad.topRight).dy)
-      ..lineTo(map(documentQuad.bottomRight).dx, map(documentQuad.bottomRight).dy)
+      ..lineTo(
+        map(documentQuad.bottomRight).dx,
+        map(documentQuad.bottomRight).dy,
+      )
       ..lineTo(map(documentQuad.bottomLeft).dx, map(documentQuad.bottomLeft).dy)
       ..close();
 

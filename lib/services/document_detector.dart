@@ -19,27 +19,27 @@ class DocumentQuad {
   final math.Point<double> bottomLeft;
 
   Iterable<math.Point<double>> get corners => [
-        topLeft,
-        topRight,
-        bottomRight,
-        bottomLeft,
-      ];
+    topLeft,
+    topRight,
+    bottomRight,
+    bottomLeft,
+  ];
 
   /// Scales the quad by [sx]/[sy], e.g. preview space to full resolution.
   DocumentQuad scale(double sx, double sy) => DocumentQuad(
-        topLeft: math.Point(topLeft.x * sx, topLeft.y * sy),
-        topRight: math.Point(topRight.x * sx, topRight.y * sy),
-        bottomRight: math.Point(bottomRight.x * sx, bottomRight.y * sy),
-        bottomLeft: math.Point(bottomLeft.x * sx, bottomLeft.y * sy),
-      );
+    topLeft: math.Point(topLeft.x * sx, topLeft.y * sy),
+    topRight: math.Point(topRight.x * sx, topRight.y * sy),
+    bottomRight: math.Point(bottomRight.x * sx, bottomRight.y * sy),
+    bottomLeft: math.Point(bottomLeft.x * sx, bottomLeft.y * sy),
+  );
 
   /// The full frame, used when no document is detected.
   static DocumentQuad fullFrame(int width, int height) => DocumentQuad(
-        topLeft: const math.Point(0, 0),
-        topRight: math.Point(width - 1.0, 0),
-        bottomRight: math.Point(width - 1.0, height - 1.0),
-        bottomLeft: math.Point(0, height - 1.0),
-      );
+    topLeft: const math.Point(0, 0),
+    topRight: math.Point(width - 1.0, 0),
+    bottomRight: math.Point(width - 1.0, height - 1.0),
+    bottomLeft: math.Point(0, height - 1.0),
+  );
 
   /// Largest corner-to-corner distance to [other], in pixels.
   double distanceTo(DocumentQuad other) {
@@ -162,7 +162,9 @@ class DocumentDetector {
         inputShape[1] != inputShape[2] ||
         inputShape[3] != 4) {
       interpreter.close();
-      throw StateError('Unexpected document model input ${inputShape.join('x')}');
+      throw StateError(
+        'Unexpected document model input ${inputShape.join('x')}',
+      );
     }
     if (input.type != TensorType.float32) {
       interpreter.close();
@@ -613,8 +615,18 @@ List<List<_Corner>> _classifyCorners(List<_Line> lines) {
       final point = _intersect(lines[i], lines[j]);
       if (point == null) continue;
 
-      final degI = _degrees(point.$1, point.$2, lines[i].centerX, lines[i].centerY);
-      final degJ = _degrees(point.$1, point.$2, lines[j].centerX, lines[j].centerY);
+      final degI = _degrees(
+        point.$1,
+        point.$2,
+        lines[i].centerX,
+        lines[i].centerY,
+      );
+      final degJ = _degrees(
+        point.$1,
+        point.$2,
+        lines[j].centerX,
+        lines[j].centerY,
+      );
       final sorted = degI <= degJ ? [degI, degJ] : [degJ, degI];
       final low = sorted[0];
       final high = sorted[1];
@@ -660,8 +672,12 @@ bool _crossesSegment(_Line line, double x, double y) {
   final dy = line.y2 - line.y1;
   final length = math.sqrt(dx * dx + dy * dy);
   if (length < 1e-6) return false;
-  final d1 = math.sqrt((x - line.x1) * (x - line.x1) + (y - line.y1) * (y - line.y1));
-  final d2 = math.sqrt((x - line.x2) * (x - line.x2) + (y - line.y2) * (y - line.y2));
+  final d1 = math.sqrt(
+    (x - line.x1) * (x - line.x1) + (y - line.y1) * (y - line.y1),
+  );
+  final d2 = math.sqrt(
+    (x - line.x2) * (x - line.x2) + (y - line.y2) * (y - line.y2),
+  );
   final near = d1 < d2 ? d1 : d2;
   final far = d1 < d2 ? d2 : d1;
   if (far <= length) return near <= length * _insideRatio;
@@ -718,10 +734,8 @@ double _score(List<_Corner> quad, double areaFraction) {
     final v1y = previous.y - current.y;
     final v2x = next.x - current.x;
     final v2y = next.y - current.y;
-    final norm = math.sqrt(
-          (v1x * v1x + v1y * v1y) * (v2x * v2x + v2y * v2y),
-        ) +
-        1e-10;
+    final norm =
+        math.sqrt((v1x * v1x + v1y * v1y) * (v2x * v2x + v2y * v2y)) + 1e-10;
     final cosine = ((v1x * v2x + v1y * v2y) / norm).clamp(-1.0, 1.0);
     degrees[i] = math.acos(cosine) * 180 / math.pi;
   }

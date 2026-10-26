@@ -41,7 +41,6 @@ dependencies:
   permission_handler: ^13.0.2
   intl: ^0.20.3
   path: ^1.9.1
-  gal: ^2.3.3
   # Runs the bundled M-LSD document-edge model (assets/models/document_edges.tflite).
   # FFI binding to LiteRT; no Java surface, safe to call from our detection isolate.
   tflite_flutter: ^0.12.1

@@ -83,9 +83,7 @@ abstract final class LensTheme {
         color: LensColor.accent,
       ),
       pageTransitionsTheme: const PageTransitionsTheme(
-        builders: {
-          TargetPlatform.android: ZoomPageTransitionsBuilder(),
-        },
+        builders: {TargetPlatform.android: ZoomPageTransitionsBuilder()},
       ),
     );
   }
@@ -121,7 +119,11 @@ abstract final class LensTheme {
       bodyLarge: TextStyle(fontSize: LensType.body, color: fg, height: 1.4),
       bodyMedium: TextStyle(fontSize: LensType.body, color: fg, height: 1.4),
       // 12 sp — card footers, carousel.
-      bodySmall: TextStyle(fontSize: LensType.label, color: secondary, height: 1.35),
+      bodySmall: TextStyle(
+        fontSize: LensType.label,
+        color: secondary,
+        height: 1.35,
+      ),
       labelLarge: TextStyle(
         fontSize: LensType.body,
         fontWeight: FontWeight.w500,

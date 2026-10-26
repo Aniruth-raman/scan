@@ -13,13 +13,12 @@ DocumentQuad quad({
   double top = 150,
   double width = 280,
   double height = 340,
-}) =>
-    DocumentQuad(
-      topLeft: math.Point(left, top),
-      topRight: math.Point(left + width, top),
-      bottomRight: math.Point(left + width, top + height),
-      bottomLeft: math.Point(left, top + height),
-    );
+}) => DocumentQuad(
+  topLeft: math.Point(left, top),
+  topRight: math.Point(left + width, top),
+  bottomRight: math.Point(left + width, top + height),
+  bottomLeft: math.Point(left, top + height),
+);
 
 double corner(QuadSmoother smoother, int index) =>
     smoother.quad!.corners.toList()[index].x;

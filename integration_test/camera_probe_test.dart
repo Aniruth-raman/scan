@@ -15,8 +15,10 @@ void main() {
       print('PROBE availableCameras -> ${cameras.length}');
       for (final c in cameras) {
         // ignore: avoid_print
-        print('PROBE camera: ${c.name} ${c.lensDirection} '
-            'sensorOrientation=${c.sensorOrientation}');
+        print(
+          'PROBE camera: ${c.name} ${c.lensDirection} '
+          'sensorOrientation=${c.sensorOrientation}',
+        );
       }
     } catch (e, s) {
       // ignore: avoid_print
@@ -46,8 +48,10 @@ void main() {
         await controller.initialize();
         final v = controller.value;
         // ignore: avoid_print
-        print('PROBE[$label] initialize OK preview=${v.previewSize} '
-            'aspect=${v.aspectRatio}');
+        print(
+          'PROBE[$label] initialize OK preview=${v.previewSize} '
+          'aspect=${v.aspectRatio}',
+        );
         try {
           await controller.setFlashMode(FlashMode.off);
           // ignore: avoid_print

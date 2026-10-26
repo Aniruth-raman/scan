@@ -1,5 +1,6 @@
 package com.example.lens_lite
 
+import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -60,7 +61,10 @@ class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandl
                     "warp" -> warp(call)
                     "transform" -> transform(call)
                     "thumbnail" -> thumbnail(call)
+                    "publishImage" -> publishImage(call)
                     "writePdf" -> writePdf(call)
+                    "listShared" -> listShared()
+                    "deleteShared" -> deleteShared(call)
                     "openFile" -> openFile(call)
                     else -> throw IllegalArgumentException("unknown method ${call.method}")
                 }
@@ -84,14 +88,18 @@ class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandl
         val path = call.argument<String>("path")
             ?: throw IllegalArgumentException("path required")
         val mime = call.argument<String>("mime") ?: "application/octet-stream"
-        val file = File(path)
-        if (!file.exists()) throw IllegalStateException("file not found: $path")
-
-        val uri: Uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}$FILE_PROVIDER_SUFFIX",
-            file
-        )
+        // Files published to a shared collection are opened by their own URI.
+        val uri: Uri = if (path.startsWith("content://")) {
+            Uri.parse(path)
+        } else {
+            val file = File(path)
+            if (!file.exists()) throw IllegalStateException("file not found: $path")
+            FileProvider.getUriForFile(
+                context,
+                "${context.packageName}$FILE_PROVIDER_SUFFIX",
+                file
+            )
+        }
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, mime)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -99,6 +107,180 @@ class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandl
         }
         context.startActivity(intent)
         return true
+    }
+
+    // ------------------------------------------------------- publishImage --
+
+    /**
+     * Publishes a finished page into the gallery album the app owns, so the
+     * export is a first-class photo and any file manager can see it.
+     *
+     * Returns the content URI: the scan list keeps it, which is how a later
+     * delete reaches exactly this file (and why the folder indexer skips it).
+     */
+    private fun publishImage(call: MethodCall): Map<String, Any> {
+        val bytes = call.argument<ByteArray>("bytes")
+            ?: throw IllegalArgumentException("bytes required")
+        val name = call.argument<String>("name")?.takeIf { it.isNotBlank() } ?: "Scan"
+        val folder = call.argument<String>("folder")?.takeIf { it.isNotBlank() } ?: "Lens Lite"
+        return publish(
+            bytes = bytes,
+            displayName = "$name.jpg",
+            mime = "image/jpeg",
+            folder = folder,
+            collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            relativeTo = Environment.DIRECTORY_PICTURES,
+            legacyDirectory = Environment.DIRECTORY_PICTURES
+        )
+    }
+
+    // --------------------------------------------------------- listShared --
+
+    /**
+     * Everything sitting in the app's two shared folders, including files this
+     * app never wrote (dropped in over USB, or saved by another app).
+     *
+     * The scan list hides the entries it already owns by URI, so a file is
+     * listed once whether it was captured here or copied in.
+     */
+    private fun listShared(): List<Map<String, Any>> {
+        val items = mutableListOf<Map<String, Any>>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            items += queryCollection(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                "${Environment.DIRECTORY_PICTURES}/$SHARED_FOLDER",
+                withThumb = true
+            )
+            items += queryCollection(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                "${Environment.DIRECTORY_DOWNLOADS}/$SHARED_FOLDER",
+                withThumb = false
+            )
+        } else {
+            items += listLegacy(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                withThumb = true
+            )
+            items += listLegacy(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                withThumb = false
+            )
+        }
+        return items
+    }
+
+    private fun queryCollection(
+        collection: Uri,
+        folder: String,
+        withThumb: Boolean
+    ): List<Map<String, Any>> {
+        val projection = arrayOf(
+            MediaStore.MediaColumns._ID,
+            MediaStore.MediaColumns.DISPLAY_NAME,
+            MediaStore.MediaColumns.MIME_TYPE,
+            MediaStore.MediaColumns.DATE_MODIFIED,
+            MediaStore.MediaColumns.SIZE
+        )
+        val out = mutableListOf<Map<String, Any>>()
+        context.contentResolver.query(
+            collection,
+            projection,
+            "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?",
+            arrayOf("$folder%"),
+            "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
+        )?.use { cursor ->
+            while (cursor.moveToNext()) {
+                val id = cursor.getLong(0)
+                val name = cursor.getString(1) ?: continue
+                val mime = cursor.getString(2) ?: ""
+                if (!isScanMime(mime)) continue
+                val uri = ContentUris.withAppendedId(collection, id)
+                out += describe(uri, name, mime, cursor.getLong(3), cursor.getLong(4), withThumb)
+            }
+        }
+        return out
+    }
+
+    private fun listLegacy(publicDir: File, withThumb: Boolean): List<Map<String, Any>> {
+        val directory = File(publicDir, SHARED_FOLDER)
+        if (!directory.isDirectory) return emptyList()
+        val out = mutableListOf<Map<String, Any>>()
+        directory.listFiles()?.forEach { file ->
+            if (!file.isFile) return@forEach
+            val mime = when (file.extension.lowercase()) {
+                "pdf" -> "application/pdf"
+                "jpg", "jpeg" -> "image/jpeg"
+                else -> return@forEach
+            }
+            out += describe(
+                Uri.fromFile(file),
+                file.name,
+                mime,
+                file.lastModified() / 1000,
+                file.length(),
+                withThumb
+            )
+        }
+        return out.sortedByDescending { it["modified"] as Long }
+    }
+
+    private fun isScanMime(mime: String): Boolean =
+        mime == "application/pdf" || mime == "image/jpeg" || mime == "image/png"
+
+    private fun describe(
+        uri: Uri,
+        name: String,
+        mime: String,
+        modified: Long,
+        size: Long,
+        withThumb: Boolean
+    ): Map<String, Any> {
+        val item = mutableMapOf<String, Any>(
+            "uri" to uri.toString(),
+            "name" to name,
+            "mime" to mime,
+            "modified" to modified * 1000L,
+            "size" to size
+        )
+        if (withThumb) {
+            sharedThumbnail(uri)?.let { item["thumb"] = it }
+        }
+        return item
+    }
+
+    /** 240 px JPEG preview for an indexed image, decoded through the resolver. */
+    private fun sharedThumbnail(uri: Uri): ByteArray? = try {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            val bytes = input.readBytes()
+            val src = decodeOriented(bytes, THUMB_EDGE)
+            try {
+                encode(scaled(src, THUMB_EDGE), 70)
+            } finally {
+                src.recycle()
+            }
+        }
+    } catch (_: Throwable) {
+        null
+    }
+
+    // ------------------------------------------------------- deleteShared --
+
+    /** Removes files from the shared collections, by the URIs the list handed out. */
+    private fun deleteShared(call: MethodCall): Int {
+        val uris = call.argument<List<String>>("uris") ?: throw IllegalArgumentException("uris required")
+        var deleted = 0
+        for (raw in uris) {
+            val uri = Uri.parse(raw)
+            val removed = context.contentResolver.delete(uri, null, null)
+            if (removed > 0) {
+                deleted += removed
+            } else if (uri.scheme == "file") {
+                // API 24-28 fallback: the indexer handed out a plain file path.
+                val file = File(uri.path ?: continue)
+                if (file.exists() && file.delete()) deleted++
+            }
+        }
+        return deleted
     }
 
     // ------------------------------------------------------------- analyze --
@@ -395,12 +577,11 @@ class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandl
     }
 
     /**
-     * Writes the app's own copy, then publishes the same bytes through
-     * `MediaStore.Downloads` so the export is visible in Files, and returns the
-     * collection and file name it landed under.
+     * Writes the app's own copy, then publishes the same bytes into a shared
+     * collection, returning the content URI that identifies exactly that file.
      *
-     * API 28 and below have no Downloads collection: the file goes into the
-     * public Downloads directory instead, which needs the legacy storage grant.
+     * The scan list keeps the URI, so a later delete reaches the published copy
+     * and the folder indexer knows to skip it.
      */
     private fun publishPdf(
         bytes: ByteArray,
@@ -413,22 +594,46 @@ class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandl
             record.parentFile?.mkdirs()
             record.writeBytes(bytes)
         }
+        return publish(
+            bytes = bytes,
+            displayName = "$name.pdf",
+            mime = "application/pdf",
+            folder = folder,
+            collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+            relativeTo = Environment.DIRECTORY_DOWNLOADS,
+            legacyDirectory = Environment.DIRECTORY_DOWNLOADS
+        )
+    }
+
+    /**
+     * Publishes [bytes] into [collection] under `<relativeTo>/<folder>`.
+     *
+     * Q and later go through MediaStore, which needs no grant; API 24-28 write
+     * into the public directory and may raise [StoragePermissionRequired] so the
+     * Dart side can ask for the legacy grant and retry.
+     */
+    private fun publish(
+        bytes: ByteArray,
+        displayName: String,
+        mime: String,
+        folder: String,
+        collection: Uri,
+        relativeTo: String,
+        legacyDirectory: String
+    ): Map<String, Any> {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val resolver = context.contentResolver
             val values = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, "$name.pdf")
-                put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
-                put(
-                    MediaStore.MediaColumns.RELATIVE_PATH,
-                    "${Environment.DIRECTORY_DOWNLOADS}/$folder"
-                )
+                put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+                put(MediaStore.MediaColumns.MIME_TYPE, mime)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, "$relativeTo/$folder")
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
-            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                ?: throw IllegalStateException("Downloads refused the document")
+            val uri = resolver.insert(collection, values)
+                ?: throw IllegalStateException("$relativeTo refused $displayName")
             try {
                 resolver.openOutputStream(uri)?.use { it.write(bytes) }
-                    ?: throw IllegalStateException("Downloads returned no stream")
+                    ?: throw IllegalStateException("$relativeTo returned no stream")
                 values.clear()
                 values.put(MediaStore.MediaColumns.IS_PENDING, 0)
                 resolver.update(uri, values, null, null)
@@ -437,22 +642,22 @@ class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandl
                 throw t
             }
             return mapOf(
-                "name" to "$name.pdf",
-                "location" to "${Environment.DIRECTORY_DOWNLOADS}/$folder"
+                "uri" to uri.toString(),
+                "name" to displayName,
+                "location" to "$relativeTo/$folder"
             )
         }
 
         val directory = File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            Environment.getExternalStoragePublicDirectory(legacyDirectory),
             folder
         )
         val file = try {
             if (!directory.exists() && !directory.mkdirs()) {
                 throw IllegalStateException("could not create ${directory.path}")
             }
-            uniquePdf(directory, name)
+            uniqueFile(directory, displayName)
         } catch (_: SecurityException) {
-            // The legacy grant has not been asked for yet.
             throw StoragePermissionRequired()
         }
         try {
@@ -461,16 +666,19 @@ class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandl
             throw StoragePermissionRequired()
         }
         return mapOf(
+            "uri" to Uri.fromFile(file).toString(),
             "name" to file.name,
-            "location" to "${Environment.DIRECTORY_DOWNLOADS}/$folder"
+            "location" to "$legacyDirectory/$folder"
         )
     }
 
-    private fun uniquePdf(directory: File, name: String): File {
-        var candidate = File(directory, "$name.pdf")
+    private fun uniqueFile(directory: File, displayName: String): File {
+        val stem = displayName.substringBeforeLast('.')
+        val extension = displayName.substringAfterLast('.')
+        var candidate = File(directory, displayName)
         var index = 2
         while (candidate.exists()) {
-            candidate = File(directory, "$name ($index).pdf")
+            candidate = File(directory, "$stem ($index).$extension")
             index++
         }
         return candidate
@@ -647,6 +855,12 @@ class LensImageKit(private val context: Context) : MethodChannel.MethodCallHandl
         const val MAX_OUTPUT_EDGE = 4096
 
         const val A4_WIDTH_PT = 595
+
+        /** The one folder the app writes to, in both Pictures and Download. */
+        const val SHARED_FOLDER = "Lens Lite"
+
+        /** Long edge of the preview published for an indexed image. */
+        const val THUMB_EDGE = 240
 
         /** Must match the FileProvider authority declared in AndroidManifest.xml. */
         const val FILE_PROVIDER_SUFFIX = ".lensfileprovider"

@@ -9,6 +9,11 @@ abstract class ScanRepository {
   Future<ScanEntry> insert(ScanEntry entry);
   Future<void> rename(int id, String title);
   Future<void> delete(int id);
+
+  /// Shared files the user removed from the list. The files themselves stay:
+  /// they were never ours to delete.
+  Future<Set<String>> hiddenMedia();
+  Future<void> hideMedia(String uri);
 }
 
 /// SQLite-backed repository, the default used by the app.
@@ -23,11 +28,11 @@ class SqfliteScanRepository implements ScanRepository {
   Future<Database> _open() async {
     final existing = _db;
     if (existing != null) return existing;
-    final path = databasePath ??
-        p.join(await getDatabasesPath(), 'lens_lite_scans.db');
+    final path =
+        databasePath ?? p.join(await getDatabasesPath(), 'lens_lite_scans.db');
     final db = await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE scans (
@@ -36,9 +41,27 @@ class SqfliteScanRepository implements ScanRepository {
             kind TEXT NOT NULL,
             file_path TEXT NOT NULL,
             thumb_path TEXT,
+            shared_uri TEXT,
             created_at INTEGER NOT NULL
           )
         ''');
+        await db.execute('''
+          CREATE TABLE hidden_media (
+            uri TEXT PRIMARY KEY,
+            hidden_at INTEGER NOT NULL
+          )
+        ''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute('ALTER TABLE scans ADD COLUMN shared_uri TEXT');
+          await db.execute('''
+            CREATE TABLE hidden_media (
+              uri TEXT PRIMARY KEY,
+              hidden_at INTEGER NOT NULL
+            )
+          ''');
+        }
       },
     );
     _db = db;
@@ -77,6 +100,22 @@ class SqfliteScanRepository implements ScanRepository {
     await db.delete('scans', where: 'id = ?', whereArgs: <Object>[id]);
   }
 
+  @override
+  Future<Set<String>> hiddenMedia() async {
+    final db = await _open();
+    final rows = await db.query('hidden_media', columns: const ['uri']);
+    return rows.map((row) => row['uri']! as String).toSet();
+  }
+
+  @override
+  Future<void> hideMedia(String uri) async {
+    final db = await _open();
+    await db.insert('hidden_media', <String, Object>{
+      'uri': uri,
+      'hidden_at': DateTime.now().millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
   Future<void> close() async {
     final db = _db;
     _db = null;
@@ -93,6 +132,7 @@ class InMemoryScanRepository implements ScanRepository {
   }
 
   final List<ScanEntry> _rows = <ScanEntry>[];
+  final Set<String> _hidden = <String>{};
   int _nextId = 1;
 
   @override
@@ -119,4 +159,10 @@ class InMemoryScanRepository implements ScanRepository {
   Future<void> delete(int id) async {
     _rows.removeWhere((entry) => entry.id == id);
   }
+
+  @override
+  Future<Set<String>> hiddenMedia() async => Set<String>.of(_hidden);
+
+  @override
+  Future<void> hideMedia(String uri) async => _hidden.add(uri);
 }

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:gal/gal.dart';
 
 import '../design/lens_hero_button.dart';
 import '../design/lens_tokens.dart';
@@ -30,12 +29,10 @@ class _Page {
 @immutable
 class ReviewResult {
   const ReviewResult.exported(this.message)
-      : addMore = false,
-        pages = const <Uint8List>[];
+    : addMore = false,
+      pages = const <Uint8List>[];
 
-  const ReviewResult.addMore(this.pages)
-      : addMore = true,
-        message = null;
+  const ReviewResult.addMore(this.pages) : addMore = true, message = null;
 
   final bool addMore;
   final String? message;
@@ -58,11 +55,7 @@ class ReviewResult {
 /// Unlike the earlier build this stage is black, not white: the original's root
 /// is `@color/lenshvc_black` and `lens-state5.png` shows black chrome.
 class ReviewScreen extends StatefulWidget {
-  const ReviewScreen({
-    super.key,
-    required this.pages,
-    required this.exporter,
-  });
+  const ReviewScreen({super.key, required this.pages, required this.exporter});
 
   /// Pages from the capture session, newest last.
   final List<Uint8List> pages;
@@ -137,10 +130,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final result = await Navigator.push<AdjustResult>(
       context,
       MaterialPageRoute(
-        builder: (_) => AdjustScreen(
-          originalJpeg: _current.bytes,
-          filter: _current.filter,
-        ),
+        builder: (_) =>
+            AdjustScreen(originalJpeg: _current.bytes, filter: _current.filter),
       ),
     );
     if (!mounted || result == null) return;
@@ -183,28 +174,16 @@ class _ReviewScreenState extends State<ReviewScreen> {
       final saveImage = _saveImage || !_savePdf;
 
       if (saveImage) {
-        // `Gal.putImage` does nothing when gallery access is refused, so ask
-        // once and only claim the gallery when it is actually granted.
-        var inGallery = await _hasGalleryAccess();
         for (var i = 0; i < pages.length; i++) {
           final title = pages.length == 1
               ? _title
               : '$_title (${i + 1} of ${pages.length})';
-          final entry = await widget.exporter.saveImage(pages[i], title: title);
-          if (!inGallery) continue;
-          try {
-            await Gal.putImage(entry.filePath, album: 'Lens Lite');
-          } catch (_) {
-            // Saved to My Scans regardless; the gallery is best-effort.
-            inGallery = false;
-          }
+          await widget.exporter.saveImage(pages[i], title: title);
         }
         parts.add(
-          !inGallery
-              ? 'Saved to My Scans'
-              : pages.length == 1
-                  ? 'Saved to Gallery'
-                  : 'Saved ${pages.length} pages',
+          pages.length == 1
+              ? 'Saved to Gallery'
+              : 'Saved ${pages.length} pages',
         );
       }
 
@@ -228,14 +207,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  Future<bool> _hasGalleryAccess() async {
-    try {
-      return await Gal.hasAccess();
-    } catch (_) {
-      return false;
-    }
   }
 
   // ---------------------------------------------------------------- sheets --
@@ -340,7 +311,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
       isScrollControlled: true,
       useSafeArea: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(LensRadius.tray)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(LensRadius.tray),
+        ),
       ),
       builder: (sheetContext) => DraggableScrollableSheet(
         initialChildSize: fraction,
@@ -440,7 +413,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
                       minWidth: LensSize.pageNumberWidth,
                     ),
                     height: LensSize.pageNumberHeight,
-                    padding: const EdgeInsets.symmetric(horizontal: LensSpace.xs),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: LensSpace.xs,
+                    ),
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
                       color: LensColor.pageNumberFill,
@@ -652,7 +627,9 @@ class _TrayAction extends StatelessWidget {
           child: Icon(
             icon,
             size: LensSize.icon,
-            color: enabled ? LensColor.gray0 : LensColor.gray0.withValues(alpha: 0.38),
+            color: enabled
+                ? LensColor.gray0
+                : LensColor.gray0.withValues(alpha: 0.38),
           ),
         ),
       ),
@@ -698,7 +675,9 @@ class _ActionCell extends StatelessWidget {
                     maxLines: 1,
                     style: TextStyle(
                       fontSize: LensType.label,
-                      color: enabled ? LensColor.editorText : LensColor.editorDisabled,
+                      color: enabled
+                          ? LensColor.editorText
+                          : LensColor.editorDisabled,
                       height: 1,
                     ),
                   ),
@@ -747,7 +726,12 @@ class _SheetSection extends StatelessWidget {
     return Container(
       width: double.infinity,
       color: LensColor.sheetBand,
-      padding: const EdgeInsets.fromLTRB(LensSpace.md, LensSpace.xs, LensSpace.md, LensSpace.xs),
+      padding: const EdgeInsets.fromLTRB(
+        LensSpace.md,
+        LensSpace.xs,
+        LensSpace.md,
+        LensSpace.xs,
+      ),
       child: Text(
         label,
         style: const TextStyle(
@@ -959,7 +943,12 @@ class _FilterSheet extends StatelessWidget {
       children: [
         const _SheetHandle(),
         const Padding(
-          padding: EdgeInsets.fromLTRB(LensSpace.md, LensSpace.xs, LensSpace.md, LensSpace.md),
+          padding: EdgeInsets.fromLTRB(
+            LensSpace.md,
+            LensSpace.xs,
+            LensSpace.md,
+            LensSpace.md,
+          ),
           child: Text(
             'Filters',
             style: TextStyle(
@@ -989,7 +978,11 @@ class _FilterSheet extends StatelessWidget {
                     ),
                   ),
                   if (filter == selected)
-                    const Icon(Icons.check, size: LensSize.icon, color: LensColor.accent),
+                    const Icon(
+                      Icons.check,
+                      size: LensSize.icon,
+                      color: LensColor.accent,
+                    ),
                 ],
               ),
             ),
@@ -1065,7 +1058,9 @@ class _ReorderSheetState extends State<_ReorderSheet> {
                 child: Padding(
                   padding: const EdgeInsets.only(right: LensSpace.sm),
                   child: ColorFiltered(
-                    colorFilter: ColorFilter.matrix(colorMatrixFor(page.filter)),
+                    colorFilter: ColorFilter.matrix(
+                      colorMatrixFor(page.filter),
+                    ),
                     child: RotatedBox(
                       quarterTurns: page.turns,
                       child: Image.memory(

@@ -104,11 +104,7 @@ class DocumentDetectionWorker {
     return _send(1, rgba, [width, height, 0, 0, false]);
   }
 
-  Future<DocumentQuad?> _send(
-    int kind,
-    Uint8List data,
-    List<Object> geometry,
-  ) {
+  Future<DocumentQuad?> _send(int kind, Uint8List data, List<Object> geometry) {
     final commands = _commands;
     if (commands == null) return Future<DocumentQuad?>.value();
     final id = _nextId++;

@@ -161,7 +161,12 @@ class _AdjustScreenState extends State<AdjustScreen> {
   /// into the top-left slot, so the quad is re-ordered rather than re-encoded:
   /// the warper always treats corner 0 as the output's top-left.
   List<math.Point<double>> _orderedCorners(DocumentQuad quad) {
-    final corners = [quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft];
+    final corners = [
+      quad.topLeft,
+      quad.topRight,
+      quad.bottomRight,
+      quad.bottomLeft,
+    ];
     final shift = _quarterTurns % 4;
     return [for (var i = 0; i < 4; i++) corners[(i - shift + 4) % 4]];
   }
@@ -201,7 +206,10 @@ class _AdjustScreenState extends State<AdjustScreen> {
         _isFullFrame(quad) &&
         widget.filter == ScanFilter.none) {
       // Nothing to crop, turn or tone: hand back the original capture.
-      Navigator.pop(context, AdjustResult(widget.originalJpeg, addAnother: addAnother));
+      Navigator.pop(
+        context,
+        AdjustResult(widget.originalJpeg, addAnother: addAnother),
+      );
       return;
     }
 
@@ -334,10 +342,7 @@ class _AdjustScreenState extends State<AdjustScreen> {
                 Expanded(
                   child: Stack(
                     fit: StackFit.expand,
-                    children: [
-                      _buildStage(),
-                      _buildTopBand(),
-                    ],
+                    children: [_buildStage(), _buildTopBand()],
                   ),
                 ),
                 _buildBottomBand(),
@@ -359,7 +364,10 @@ class _AdjustScreenState extends State<AdjustScreen> {
         child: SizedBox(
           width: 24,
           height: 24,
-          child: CircularProgressIndicator(strokeWidth: 2, color: LensColor.gray0),
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: LensColor.gray0,
+          ),
         ),
       );
     }
@@ -371,7 +379,10 @@ class _AdjustScreenState extends State<AdjustScreen> {
           child: Text(
             error,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: LensColor.white70, fontSize: LensType.body),
+            style: const TextStyle(
+              color: LensColor.white70,
+              fontSize: LensType.body,
+            ),
           ),
         ),
       );
@@ -407,11 +418,8 @@ class _AdjustScreenState extends State<AdjustScreen> {
                   Offset(left, top),
                   scale,
                 ),
-                onPanUpdate: (details) => _dragTo(
-                  details.localPosition,
-                  Offset(left, top),
-                  scale,
-                ),
+                onPanUpdate: (details) =>
+                    _dragTo(details.localPosition, Offset(left, top), scale),
                 onPanEnd: (_) {
                   HapticFeedback.selectionClick();
                   _endDrag();
@@ -421,7 +429,9 @@ class _AdjustScreenState extends State<AdjustScreen> {
                   fit: StackFit.expand,
                   children: [
                     ColorFiltered(
-                      colorFilter: ColorFilter.matrix(colorMatrixFor(widget.filter)),
+                      colorFilter: ColorFilter.matrix(
+                        colorMatrixFor(widget.filter),
+                      ),
                       child: RotatedBox(
                         quarterTurns: _quarterTurns,
                         child: Image.memory(
@@ -453,10 +463,17 @@ class _AdjustScreenState extends State<AdjustScreen> {
   Widget _buildLoupe(BoxConstraints constraints, Offset focal) {
     const diameter = LensSize.magnifier;
     const radius = diameter / 2;
-    final preferred = focal + const Offset(0, -(radius + LensSize.magnifierGap));
+    final preferred =
+        focal + const Offset(0, -(radius + LensSize.magnifierGap));
     final centre = Offset(
-      preferred.dx.clamp(radius + LensSpace.xs, constraints.maxWidth - radius - LensSpace.xs),
-      preferred.dy.clamp(radius + LensSpace.xs, constraints.maxHeight - radius - LensSpace.xs),
+      preferred.dx.clamp(
+        radius + LensSpace.xs,
+        constraints.maxWidth - radius - LensSpace.xs,
+      ),
+      preferred.dy.clamp(
+        radius + LensSpace.xs,
+        constraints.maxHeight - radius - LensSpace.xs,
+      ),
     );
     return Positioned(
       left: centre.dx - radius,
@@ -472,7 +489,11 @@ class _AdjustScreenState extends State<AdjustScreen> {
             ),
           ),
           shadows: const [
-            BoxShadow(color: Color(0x59000000), blurRadius: 8, offset: Offset(0, 2)),
+            BoxShadow(
+              color: Color(0x59000000),
+              blurRadius: 8,
+              offset: Offset(0, 2),
+            ),
           ],
         ),
         // The magnifier reads the point this far from its own centre, which is
@@ -568,16 +589,10 @@ class _AdjustScreenState extends State<AdjustScreen> {
         const SizedBox(height: LensSpace.xs),
         const Text(
           'Crop document',
-          style: TextStyle(
-            fontSize: LensType.body,
-            color: LensColor.gray3,
-          ),
+          style: TextStyle(fontSize: LensType.body, color: LensColor.gray3),
         ),
         const SizedBox(height: LensSpace.md),
-        SizedBox(
-          height: LensSize.filmThumbHeight,
-          child: _buildFilmstrip(),
-        ),
+        SizedBox(height: LensSize.filmThumbHeight, child: _buildFilmstrip()),
         const SizedBox(height: 26),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: LensSpace.md),
@@ -622,7 +637,9 @@ class _AdjustScreenState extends State<AdjustScreen> {
             Positioned(
               left: currentLeft + tileWidth + gap,
               top: 0,
-              child: _AddTile(onTap: _applying ? null : () => _apply(addAnother: true)),
+              child: _AddTile(
+                onTap: _applying ? null : () => _apply(addAnother: true),
+              ),
             ),
           ],
         );
@@ -795,10 +812,7 @@ class _DashedBorderPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final outline = Path()
       ..addRRect(
-        RRect.fromRectAndRadius(
-          Offset.zero & size,
-          Radius.circular(radius),
-        ),
+        RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(radius)),
       );
     final paint = Paint()
       ..style = PaintingStyle.stroke
@@ -874,5 +888,6 @@ class _CropPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_CropPainter oldDelegate) => oldDelegate.corners != corners;
+  bool shouldRepaint(_CropPainter oldDelegate) =>
+      oldDelegate.corners != corners;
 }

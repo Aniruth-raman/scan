@@ -27,10 +27,7 @@ Future<void> main() async {
   runApp(
     LensLiteApp(
       repository: repository,
-      exporter: ScanExporter(
-        repository: repository,
-        storageDirectory: storage,
-      ),
+      exporter: ScanExporter(repository: repository, storageDirectory: storage),
     ),
   );
 }
@@ -57,4 +54,4 @@ class LensLiteApp extends StatelessWidget {
       home: HistoryScreen(repository: repository, exporter: exporter),
     );
   }
-}
+}

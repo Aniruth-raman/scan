@@ -50,7 +50,8 @@ Future<AdjustPreview?> prepareAdjustPreview(Uint8List jpeg) async {
 
   // The model runs in its own isolate; a miss falls back to the full frame so
   // the crop stage always has a draggable quad.
-  final detected = await DocumentDetectionWorker.instance.detectRgba(
+  final detected =
+      await DocumentDetectionWorker.instance.detectRgba(
         capture.rgba,
         width: capture.detectWidth,
         height: capture.detectHeight,

@@ -23,14 +23,13 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const imageChannel = MethodChannel('lens_lite/image');
-  const galChannel = MethodChannel('gal');
 
   late Directory tempDir;
   late ScanExporter exporter;
   late InMemoryScanRepository repository;
   late List<String> nativeCalls;
   late List<Map<Object?, Object?>> pdfCalls;
-  late bool galleryGranted;
+  late bool publishFails;
 
   setUp(() {
     tempDir = Directory.systemTemp.createTempSync('lens_lite_review');
@@ -38,7 +37,7 @@ void main() {
     exporter = ScanExporter(repository: repository, storageDirectory: tempDir);
     nativeCalls = <String>[];
     pdfCalls = <Map<Object?, Object?>>[];
-    galleryGranted = true;
+    publishFails = false;
 
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -57,25 +56,30 @@ void main() {
             'width': 320,
             'height': 240,
           };
+        case 'publishImage':
+          if (publishFails) {
+            throw PlatformException(
+              code: 'lens_image_kit',
+              message: 'no space',
+            );
+          }
+          final imageName =
+              (call.arguments as Map<Object?, Object?>)['name'] as String;
+          return <String, dynamic>{
+            'uri': 'content://media/external/images/media/$imageName',
+            'name': '$imageName.jpg',
+            'location': 'Pictures/Lens Lite',
+          };
         case 'writePdf':
           final arguments = call.arguments as Map<Object?, Object?>;
           pdfCalls.add(arguments);
           return <String, dynamic>{
+            'uri': 'content://media/external/downloads/${arguments['name']}',
             'name': '${arguments['name']}.pdf',
             'location': 'Download/${arguments['folder']}',
           };
         default:
           throw MissingPluginException(call.method);
-      }
-    });
-    // The gallery plugin is not under test; stand in for the platform.
-    messenger.setMockMethodCallHandler(galChannel, (call) async {
-      switch (call.method) {
-        case 'hasAccess':
-        case 'requestAccess':
-          return galleryGranted;
-        default:
-          return null;
       }
     });
   });
@@ -84,7 +88,6 @@ void main() {
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(imageChannel, null);
-    messenger.setMockMethodCallHandler(galChannel, null);
     try {
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
     } on FileSystemException {
@@ -212,8 +215,9 @@ void main() {
     expect(nativeCalls, isEmpty, reason: 'rotate must not re-encode the page');
   });
 
-  testWidgets('delete is disabled while the session has one page',
-      (tester) async {
+  testWidgets('delete is disabled while the session has one page', (
+    tester,
+  ) async {
     await pumpReview(tester, <Uint8List>[fakeJpeg()]);
 
     await tester.tap(find.byIcon(Icons.delete_outline));
@@ -223,8 +227,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('delete drops the current page when there are several',
-      (tester) async {
+  testWidgets('delete drops the current page when there are several', (
+    tester,
+  ) async {
     await pumpReview(tester, <Uint8List>[fakeJpeg(), fakeJpeg()]);
 
     await tester.tap(find.byIcon(Icons.delete_outline));
@@ -236,13 +241,13 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Add hands the pages back to the capture session', (tester) async {
+  testWidgets('Add hands the pages back to the capture session', (
+    tester,
+  ) async {
     ReviewResult? result;
-    await pumpReview(
-      tester,
-      <Uint8List>[fakeJpeg()],
-      onResult: (value) => result = value,
-    );
+    await pumpReview(tester, <Uint8List>[
+      fakeJpeg(),
+    ], onResult: (value) => result = value);
 
     await tester.tap(find.text('Add'));
     await tester.pumpAndSettle();
@@ -280,11 +285,9 @@ void main() {
   testWidgets('Finish saves the image under the renamed scan', (tester) async {
     await onAndroid(() async {
       ReviewResult? result;
-      await pumpReview(
-        tester,
-        <Uint8List>[fakeJpeg()],
-        onResult: (value) => result = value,
-      );
+      await pumpReview(tester, <Uint8List>[
+        fakeJpeg(),
+      ], onResult: (value) => result = value);
       await renameVia(tester, 'save');
 
       await finish(tester);
@@ -301,26 +304,29 @@ void main() {
     });
   });
 
-  testWidgets('Finish falls back to My Scans when the gallery refuses',
-      (tester) async {
+  testWidgets('a failed publish keeps the review open with an error', (
+    tester,
+  ) async {
     await onAndroid(() async {
-      galleryGranted = false;
+      publishFails = true;
       ReviewResult? result;
-      await pumpReview(
-        tester,
-        <Uint8List>[fakeJpeg()],
-        onResult: (value) => result = value,
-      );
+      await pumpReview(tester, <Uint8List>[
+        fakeJpeg(),
+      ], onResult: (value) => result = value);
       await renameVia(tester, 'save');
 
       await finish(tester);
 
-      expect(result?.message, 'Saved to My Scans');
+      // Nothing was recorded and the stage is still up, showing why.
+      expect(result, isNull);
+      expect(await repository.all(), isEmpty);
+      expect(find.textContaining('Could not save'), findsOneWidget);
     });
   });
 
-  testWidgets('an edited page is baked through the native transform once',
-      (tester) async {
+  testWidgets('an edited page is baked through the native transform once', (
+    tester,
+  ) async {
     await onAndroid(() async {
       await pumpReview(tester, <Uint8List>[fakeJpeg()]);
 
@@ -337,15 +343,14 @@ void main() {
     });
   });
 
-  testWidgets('image + PDF produce one tile each, both named after the scan',
-      (tester) async {
+  testWidgets('image + PDF produce one tile each, both named after the scan', (
+    tester,
+  ) async {
     await onAndroid(() async {
       ReviewResult? result;
-      await pumpReview(
-        tester,
-        <Uint8List>[fakeJpeg()],
-        onResult: (value) => result = value,
-      );
+      await pumpReview(tester, <Uint8List>[
+        fakeJpeg(),
+      ], onResult: (value) => result = value);
       await renameVia(tester, 'Q4 report');
 
       await tester.tap(find.text('Options'));
@@ -371,10 +376,7 @@ void main() {
       // and a PDF tile.
       final scans = await repository.all();
       expect(scans, hasLength(2));
-      expect(
-        scans.map((entry) => entry.kind).toSet(),
-        {'image', 'pdf'},
-      );
+      expect(scans.map((entry) => entry.kind).toSet(), {'image', 'pdf'});
       expect(
         p.basename(scans.firstWhere((entry) => entry.isPdf).filePath),
         'Q4 report.pdf',
@@ -389,11 +391,9 @@ void main() {
   testWidgets('a PDF-only save still produces its tile', (tester) async {
     await onAndroid(() async {
       ReviewResult? result;
-      await pumpReview(
-        tester,
-        <Uint8List>[fakeJpeg()],
-        onResult: (value) => result = value,
-      );
+      await pumpReview(tester, <Uint8List>[
+        fakeJpeg(),
+      ], onResult: (value) => result = value);
       await renameVia(tester, 'Q4 report');
 
       await tester.tap(find.text('Options'));

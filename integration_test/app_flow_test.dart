@@ -17,6 +17,10 @@ import 'package:lens_lite/services/scan_exporter.dart';
 ///
 /// The camera screen repaints every analysed frame, so nothing here uses
 /// `pumpAndSettle` while the viewfinder is live — it would never settle.
+///
+/// A fresh install has no camera grant and the system dialog swallows the taps,
+/// so grant it first:
+/// `adb shell pm grant com.example.lens_lite android.permission.CAMERA`.
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -138,8 +142,10 @@ void main() {
     final after = await repository.all();
     final saved = after.length - before.length;
     // ignore: avoid_print
-    print('FLOW image: +$saved rows, newest=${after.first.title} '
-        '${after.first.kind} ${p.basename(after.first.filePath)}');
+    print(
+      'FLOW image: +$saved rows, newest=${after.first.title} '
+      '${after.first.kind} ${p.basename(after.first.filePath)}',
+    );
     expect(saved, 1, reason: 'an image save should record exactly one row');
     expect(after.first.isPdf, isFalse);
     expect(File(after.first.filePath).existsSync(), isTrue);
@@ -173,8 +179,10 @@ void main() {
     final after = await repository.all();
     final added = after.sublist(0, after.length - before.length);
     // ignore: avoid_print
-    print('FLOW pdf: ${added.map((entry) => '${entry.kind}:'
-        '${p.basename(entry.filePath)}').join(', ')}');
+    print(
+      'FLOW pdf: ${added.map((entry) => '${entry.kind}:'
+          '${p.basename(entry.filePath)}').join(', ')}',
+    );
     expect(added, hasLength(2), reason: 'image and PDF each get a record');
     expect(added.where((entry) => entry.isPdf), hasLength(1));
     final ScanEntry pdf = added.firstWhere((entry) => entry.isPdf);
