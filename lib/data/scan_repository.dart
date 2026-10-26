@@ -87,12 +87,6 @@ class SqfliteScanRepository implements ScanRepository {
     final db = await _open();
     await db.delete('scans', where: 'id = ?', whereArgs: <Object>[id]);
   }
-
-  Future<void> close() async {
-    final db = _db;
-    _db = null;
-    if (db != null) await db.close();
-  }
 }
 
 /// In-memory repository used by widget and unit tests.

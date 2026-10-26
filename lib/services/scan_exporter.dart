@@ -61,7 +61,6 @@ class ScanExporter {
   Future<ScanEntry> saveImage(
     Uint8List pageBytes, {
     String? title,
-    ScanFilter filter = ScanFilter.none,
   }) async {
     final now = DateTime.now();
     final effectiveTitle = title ?? defaultTitle(now);

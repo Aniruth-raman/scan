@@ -88,12 +88,18 @@ class ScanImageKit(private val context: Context) : MethodChannel.MethodCallHandl
         val path = call.argument<String>("path")
             ?: throw IllegalArgumentException("path required")
         val mime = call.argument<String>("mime") ?: "application/octet-stream"
-        // Files published to a shared collection are opened by their own URI.
-        val uri: Uri = if (path.startsWith("content://")) {
-            Uri.parse(path)
+        // Files published to a shared collection are opened by their own URI;
+        // the legacy publish path hands out a `file://` URI on API 24-28.
+        val raw = if (path.startsWith("file://")) {
+            Uri.parse(path).path ?: path
         } else {
-            val file = File(path)
-            if (!file.exists()) throw IllegalStateException("file not found: $path")
+            path
+        }
+        val uri: Uri = if (raw.startsWith("content://")) {
+            Uri.parse(raw)
+        } else {
+            val file = File(raw)
+            if (!file.exists()) throw IllegalStateException("file not found: $raw")
             FileProvider.getUriForFile(
                 context,
                 "${context.packageName}$FILE_PROVIDER_SUFFIX",

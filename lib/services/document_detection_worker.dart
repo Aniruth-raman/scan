@@ -20,9 +20,7 @@ class DocumentDetectionWorker {
 
   static final DocumentDetectionWorker instance = DocumentDetectionWorker._();
 
-  Isolate? _isolate;
   SendPort? _commands;
-  ReceivePort? _receive;
   final Map<int, Completer<DocumentQuad?>> _pending = {};
   int _nextId = 1;
   Future<void>? _starting;
@@ -34,7 +32,6 @@ class DocumentDetectionWorker {
 
   Future<void> _spawn() async {
     final receive = ReceivePort();
-    _receive = receive;
     final ready = Completer<SendPort>();
     final loaded = Completer<bool>();
 
@@ -55,7 +52,7 @@ class DocumentDetectionWorker {
       }
     });
 
-    _isolate = await Isolate.spawn(
+    await Isolate.spawn(
       _workerMain,
       receive.sendPort,
       debugName: 'document-detection',
@@ -117,19 +114,6 @@ class DocumentDetectionWorker {
       ...geometry,
     ]);
     return completer.future;
-  }
-
-  void dispose() {
-    for (final completer in _pending.values) {
-      if (!completer.isCompleted) completer.complete(null);
-    }
-    _pending.clear();
-    _commands = null;
-    _starting = null;
-    _isolate?.kill(priority: Isolate.immediate);
-    _isolate = null;
-    _receive?.close();
-    _receive = null;
   }
 }
 

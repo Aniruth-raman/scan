@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'document_detection_worker.dart';
@@ -128,23 +127,3 @@ Future<Uint8List?> cropJpegToCorners(
   );
   return page.bytes;
 }
-
-/// Builds a [DocumentQuad] from the flat eight-value corner list.
-DocumentQuad quadFromCorners(List<double> corners) => DocumentQuad(
-  topLeft: math.Point(corners[0], corners[1]),
-  topRight: math.Point(corners[2], corners[3]),
-  bottomRight: math.Point(corners[4], corners[5]),
-  bottomLeft: math.Point(corners[6], corners[7]),
-);
-
-/// Flattens a [DocumentQuad] back to the eight-value corner list.
-List<double> cornersFromQuad(DocumentQuad quad) => <double>[
-  quad.topLeft.x,
-  quad.topLeft.y,
-  quad.topRight.x,
-  quad.topRight.y,
-  quad.bottomRight.x,
-  quad.bottomRight.y,
-  quad.bottomLeft.x,
-  quad.bottomLeft.y,
-];

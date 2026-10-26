@@ -148,8 +148,6 @@ class DocumentDetector {
   final int _mapSize;
   final int _pointCount;
 
-  int get inputSize => _modelSize;
-
   /// Loads the model. Throws when the graph does not have the expected M-LSD
   /// fingerprint, so a bad asset fails loudly at startup rather than silently
   /// returning no detections.
@@ -199,8 +197,6 @@ class DocumentDetector {
       pointShape[1],
     );
   }
-
-  void dispose() => _interpreter.close();
 
   // --------------------------------------------------------------- surfaces --
 

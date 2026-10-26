@@ -2,47 +2,49 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../design/scan_top_bar.dart';
+import '../design/scan_tokens.dart';
 import '../models/scan_entry.dart';
-import '../services/native_image_kit.dart';
 
-/// Opens a saved scan: images zoom in-app, PDFs open in the system viewer.
+/// Opens a saved image full-screen. PDFs are handed to the system viewer from
+/// the scan list instead, so this screen never sees one.
 class ScanViewerScreen extends StatelessWidget {
   const ScanViewerScreen({super.key, required this.entry});
 
   final ScanEntry entry;
 
-  Future<void> _openPdf(BuildContext context) async {
-    try {
-      await NativeImageKit.openFile(
-        path: entry.filePath,
-        mimeType: 'application/pdf',
-      );
-    } catch (error) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Could not open PDF: $error')));
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(title: Text(entry.title)),
-      body: entry.isPdf
-          ? Center(
-              child: FilledButton.icon(
-                onPressed: () => _openPdf(context),
-                icon: const Icon(Icons.picture_as_pdf),
-                label: const Text('Open PDF'),
-              ),
-            )
-          : Center(
-              child: InteractiveViewer(
-                maxScale: 6,
-                child: Image.file(File(entry.filePath), fit: BoxFit.contain),
+      backgroundColor: ScanColor.stageBlack,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            ScanListTopBar(
+              title: entry.title,
+              titleColor: ScanColor.gray0,
+              leading: ScanBarAction(
+                icon: Icons.arrow_back,
+                semanticLabel: 'Back',
+                color: ScanColor.gray0,
+                onPressed: () => Navigator.pop(context),
               ),
             ),
+            Expanded(
+              child: InteractiveViewer(
+                maxScale: 6,
+                child: Center(
+                  child: Image.file(
+                    File(entry.filePath),
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

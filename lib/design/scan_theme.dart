@@ -11,9 +11,6 @@ abstract final class ScanTheme {
   /// List and editor stage: white surface, dark text.
   static ThemeData editor() => _build(ScanChrome.light);
 
-  /// Capture and crop stage: black surface, light text.
-  static ThemeData capture() => _build(ScanChrome.dark);
-
   static ThemeData _build(ScanChrome chrome) {
     final scheme = ColorScheme(
       brightness: Brightness.light,
@@ -134,64 +131,6 @@ abstract final class ScanTheme {
         color: fg,
         height: 1.2,
       ),
-      labelSmall: TextStyle(
-        fontSize: ScanType.micro,
-        fontWeight: FontWeight.w500,
-        color: secondary,
-        height: 1.2,
-      ),
     );
   }
-}
-
-/// Named text styles for the custom chrome widgets, which cannot rely on
-/// `Theme.of(context).textTheme` alone for the exact tracking the design needs.
-abstract final class ScanText {
-  /// App-bar title: 17 sp medium.
-  static TextStyle appBar(Color color) => TextStyle(
-    fontSize: ScanType.appBar,
-    fontWeight: FontWeight.w500,
-    color: color,
-    height: 1.3,
-  );
-
-  /// Sheet header: 20 sp medium.
-  static TextStyle sheet(Color color) => TextStyle(
-    fontSize: ScanType.sheet,
-    fontWeight: FontWeight.w500,
-    color: color,
-    height: 1.3,
-  );
-
-  /// Hero/pill label: 14 sp medium.
-  static TextStyle hero(Color color) => TextStyle(
-    fontSize: ScanType.body,
-    fontWeight: FontWeight.w500,
-    color: color,
-    height: 1.2,
-  );
-
-  /// Mode carousel: uppercase, tracked, 12 sp. The signature cue.
-  static TextStyle carousel(Color color, {bool selected = false}) => TextStyle(
-    fontSize: ScanType.label,
-    fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
-    letterSpacing: ScanType.carouselTracking,
-    color: color,
-    height: 1.2,
-  );
-
-  /// Card footer title: 12 sp.
-  static TextStyle cardTitle(Color color) => TextStyle(
-    fontSize: ScanType.label,
-    fontWeight: FontWeight.w400,
-    color: color,
-    height: 1.2,
-  );
-
-  static TextStyle caption(Color color) => TextStyle(
-    fontSize: ScanType.micro,
-    fontWeight: FontWeight.w400,
-    color: color,
-    height: 1.2,
-  );
 }
