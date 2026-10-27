@@ -427,13 +427,13 @@ was upgraded because the tiny 320 was the reason detection kept coming up empty:
 | output map | 160×160 | 256×256 |
 | size | 1,279,472 B | 3,115,168 B |
 
-The "large" backbone is more accurate at the same cost class, and the 512 input is the resolution
-the post-processing was written against: `DocumentDetector`'s constants (`_refSize = 512`,
-`_minSegmentDistance = 40`) are the reference's 512-px tuning, and a 256-px map lands on it
-exactly (`512 / 256 = 2.0`). The tiny 320's 160-px map was being upscaled 3.2×, which effectively
-raised the segment-length floor and threw away shorter, fainter edges — the likely cause of
-"quad not showing". The detector reads input/map/point shapes from the model at load, so this was
-a model-file swap with no code change.
+Two accuracy wins over the tiny 320, both from the model itself rather than the post-processing:
+the **large** backbone extracts edges the tiny one misses (the M-LSD paper scores the large family
+a few sAP points higher), and the **512 input** keeps finer edge detail than the 320 downscale.
+The 512's 256-px output map also lands on the post-processing's `_refSize = 512` exactly
+(`512 / 256 = 2.0`), whereas the 320's 160-px map ran through a 3.2× scale, quantising segment
+endpoints more coarsely. The detector reads input/map/point shapes from the model at load, so this
+was a model-file swap with no code change.
 
 Source: `navervision/mlsd` `tflite_models/M-LSD_512_large_fp16.tflite`, Apache-2.0 (same licence,
 `assets/models/LICENSE-mlsd.txt`).
