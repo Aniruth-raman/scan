@@ -441,3 +441,34 @@ Source: `navervision/mlsd` `tflite_models/M-LSD_512_large_fp16.tflite`, Apache-2
 `flutter analyze` clean, `flutter test` 46/46. Release APK **44,522,435 B** — 28.67 MB under the
 74,580,524 B `document_scan` baseline, back in line with the original ~42 MB budget (the extra
 ~1.8 MB is the larger model).
+
+## The outline now seeds the crop (2026-10-28)
+
+The gap: `camera_screen._capture()` never passed `_quad` to `AdjustScreen`, so the crop stage
+re-detected the page from the still. Two different detections then disagreed about the same shot,
+and the corners the user had lined up were not the corners being cropped.
+
+Fix, in the pipeline's own terms:
+
+| stage | before | now |
+|---|---|---|
+| shutter | `_quad` dropped | `_quad` + `_frameDisplaySize` read before the stream is paused |
+| handoff | `AdjustScreen(originalJpeg)` only | `normalizedCorners` (0..1 of the analysed frame) + `frameSize` |
+| crop seed | always re-detected | outline mapped onto the capture; detection only when there is no outline |
+
+The mapping (`cornersFromOutline`) inverts the same `BoxFit.cover` geometry the outline is painted
+with, so a preview/still aspect difference offsets the corners instead of stretching them. Tests
+cover equal aspect, 4:3 preview against a 16:9 capture, malformed input, and clamping.
+
+Verified on the M34 by driving the real flow over adb:
+
+1. My Scans -> camera: live quad drawn, "Document found".
+2. Shutter -> crop screen opens with the quad on the same page corners.
+3. Adjust -> Review and Edit -> Options (title, Save as Image/PDF) -> Finish.
+4. `Pictures/Scan/Scan Oct 28, 2026 12_26 AM.jpg` (275,597 B) and
+   `Download/Scan/Scan Oct 28, 2026 12_26 AM.pdf` (276,168 B).
+5. PDF geometry: `/MediaBox [0 0 365 367]` for a `1519 x 1526` page, i.e. `1519 * 72 / 300` —
+   the S8 DPI sizing is live.
+
+Note: Auto Capture was on, so one steady scene produced an automatic shot plus the manual one.
+That is the feature working, and it is why the first test session held two pages.
