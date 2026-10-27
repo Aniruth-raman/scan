@@ -40,10 +40,18 @@ def parse_gt(xml_path):
 
 
 def find_video(gt_path, data_root):
-    """Locate the .avi/.mp4 that a .gt.xml belongs to."""
+    """Locate the .avi/.mp4 that a .gt.xml belongs to.
+
+    Clip names repeat across backgrounds (``background01/datasheet001.avi`` and
+    ``background02/datasheet001.avi``), so the match is scoped to the same
+    ``backgroundXX`` folder the ground truth came from.
+    """
     stem = os.path.basename(gt_path).replace(".gt.xml", "")
+    bg = os.path.basename(os.path.dirname(gt_path))
+    if bg.endswith("_gt"):
+        bg = bg[:-3]
     for ext in (".avi", ".mp4"):
-        hits = glob.glob(os.path.join(data_root, "**", stem + ext), recursive=True)
+        hits = glob.glob(os.path.join(data_root, "**", bg, stem + ext), recursive=True)
         if hits:
             return hits[0]
     return None
