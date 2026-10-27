@@ -76,12 +76,19 @@ def main():
     if not gts:
         raise SystemExit(f"no *.gt.xml under {args.data} — extract the dataset first")
 
+    def background(p):
+        name = os.path.basename(os.path.dirname(p))
+        return name[:-3] if name.endswith("_gt") else name
+
+    backgrounds = sorted({background(p) for p in gts})
+    val_bg = args.val_background if args.val_background in backgrounds else backgrounds[-1]
+    print(f"backgrounds: {backgrounds}  -> validation: {val_bg}")
+
     train, val = [], []
     kept = 0
     for gi, gt_path in enumerate(gts):
-        # backgroundXX_gt/foo.gt.xml -> backgroundXX
-        bg = os.path.basename(os.path.dirname(gt_path)).replace("_gt", "")
-        is_val = bg == args.val_background
+        bg = background(gt_path)
+        is_val = bg == val_bg
         frames = parse_gt(gt_path)
         if not frames:
             continue
