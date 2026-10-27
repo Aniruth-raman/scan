@@ -275,6 +275,9 @@ class _CameraScreenState extends State<CameraScreen> {
     }
     // Whatever was holding still is stale the moment the shot is taken.
     _steadySince = null;
+    // Keep the outline that was on screen: it is the crop's starting corners.
+    final shotQuad = _quad;
+    final shotFrame = _frameDisplaySize;
     setState(() => _capturing = true);
     try {
       await _pauseStream();
@@ -283,6 +286,20 @@ class _CameraScreenState extends State<CameraScreen> {
       if (!mounted) return;
       await HapticFeedback.mediumImpact();
       if (!mounted) return;
+      final outline = (shotQuad == null ||
+              shotFrame.width <= 0 ||
+              shotFrame.height <= 0)
+          ? null
+          : <double>[
+              shotQuad.topLeft.x / shotFrame.width,
+              shotQuad.topLeft.y / shotFrame.height,
+              shotQuad.topRight.x / shotFrame.width,
+              shotQuad.topRight.y / shotFrame.height,
+              shotQuad.bottomRight.x / shotFrame.width,
+              shotQuad.bottomRight.y / shotFrame.height,
+              shotQuad.bottomLeft.x / shotFrame.width,
+              shotQuad.bottomLeft.y / shotFrame.height,
+            ];
       final cropped = await Navigator.push<AdjustResult>(
         context,
         MaterialPageRoute(
@@ -290,6 +307,8 @@ class _CameraScreenState extends State<CameraScreen> {
             originalJpeg: bytes,
             pages: List<Uint8List>.unmodifiable(_pages),
             filter: _mode.filter,
+            normalizedCorners: outline,
+            frameSize: shotFrame,
           ),
         ),
       );
