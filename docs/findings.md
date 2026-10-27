@@ -413,3 +413,31 @@ its own, and the ten `mipmap-*/ic_launcher*.png` files were deleted (55,334 B) a
 unreferenced `mipmap-anydpi-v26/ic_launcher_round.xml` (347 B) and the five now-empty density
 folders. `ic_launcher_round.*` was never reachable anyway: the manifest sets no
 `android:roundIcon`. Release APK went 42,715,011 → **42,686,787 B**.
+
+## Back to M-LSD, with the *large* model instead of the tiny one (2026-10-27)
+
+The `document_scan` experiment (OpenCV, +40.5 MB) was reverted and the bundled M-LSD detector
+restored — the branch the repo rules already bless for the live quad. On top of that, the model
+was upgraded because the tiny 320 was the reason detection kept coming up empty:
+
+| | before (D1) | now |
+|---|---|---|
+| model | `M-LSD_320_tiny_fp16.tflite` | `M-LSD_512_large_fp16.tflite` |
+| input | 320×320×4 | 512×512×4 |
+| output map | 160×160 | 256×256 |
+| size | 1,279,472 B | 3,115,168 B |
+
+The "large" backbone is more accurate at the same cost class, and the 512 input is the resolution
+the post-processing was written against: `DocumentDetector`'s constants (`_refSize = 512`,
+`_minSegmentDistance = 40`) are the reference's 512-px tuning, and a 256-px map lands on it
+exactly (`512 / 256 = 2.0`). The tiny 320's 160-px map was being upscaled 3.2×, which effectively
+raised the segment-length floor and threw away shorter, fainter edges — the likely cause of
+"quad not showing". The detector reads input/map/point shapes from the model at load, so this was
+a model-file swap with no code change.
+
+Source: `navervision/mlsd` `tflite_models/M-LSD_512_large_fp16.tflite`, Apache-2.0 (same licence,
+`assets/models/LICENSE-mlsd.txt`).
+
+`flutter analyze` clean, `flutter test` 46/46. Release APK **44,522,435 B** — 28.67 MB under the
+74,580,524 B `document_scan` baseline, back in line with the original ~42 MB budget (the extra
+~1.8 MB is the larger model).
