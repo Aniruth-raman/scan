@@ -60,7 +60,7 @@ class DocumentDetectionWorker {
     final commands = await ready.future;
     _commands = commands;
 
-    final model = await rootBundle.load('assets/models/document_edges.tflite');
+    final model = await rootBundle.load('assets/models/document_mask.tflite');
     commands.send(
       TransferableTypedData.fromList([
         model.buffer.asUint8List(model.offsetInBytes, model.lengthInBytes),

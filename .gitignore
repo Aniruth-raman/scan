@@ -49,3 +49,8 @@ app.*.map.json
 
 # Never in this repo: the reference APK or anything decoded from it.
 *.apk
+
+# validation overlays from tools/segmentation/validate.py
+viz/
+best.pth
+
