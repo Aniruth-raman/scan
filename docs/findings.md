@@ -441,3 +441,71 @@ Source: `navervision/mlsd` `tflite_models/M-LSD_512_large_fp16.tflite`, Apache-2
 `flutter analyze` clean, `flutter test` 46/46. Release APK **44,522,435 B** — 28.67 MB under the
 74,580,524 B `document_scan` baseline, back in line with the original ~42 MB budget (the extra
 ~1.8 MB is the larger model).
+
+## What Lens's edge detection actually is: a MobileNetV2 segmenter (2026-10-27)
+
+`lens.apk` bundles three on-device models, all referenced from the DEX (`classes4.dex` names both
+`.ort` files, `classes5.dex` names the `.tflite`):
+
+| file | size | input | output | what it is |
+|---|---|---|---|---|
+| `assets/lens/models/mnv2_ep42_wb_quant.ort` | 342,016 B | `N×256×256×3` f32 | `N×256×256×1` f32 | **document page segmenter** |
+| `assets/lens/models/triclass_doc_classifier.ort` | 204,064 B | `1×3×256×256` f32 | `1×3` | 3-class gate (document present/type) |
+| `assets/clf_model.tflite` | 400,997 B | `1×256×256×3` f32 | `1×3` | 3-class gate (document present/type) |
+
+The segmenter graph is `QLinearConv` / `QLinearAdd` / `QLinearConcat` + `ResizeBilinear` + the
+`convolution_output*_zero_point` tensors — i.e. an **int8-quantized MobileNetV2 encoder with a
+bilinear-upsampling decoder**, emitting one 256×256 page mask per 256×256 RGB frame. It is a
+**semantic-segmentation** detector, not line segments (M-LSD) or corner heatmaps (DocAligner).
+
+That is the reason its edge detection feels better: a dense page mask is robust edge-to-edge, under
+occlusion, and against busy backgrounds, and the quadrilateral is then read off the mask contour
+(the code calls it `mnv2_ep42_wb_quant` — MobileNetV2, epoch 42; "wb" is a training/mode tag). The
+two 3-class classifiers gate "is a document present", which is what our `DocumentQuad? == null`
+fallback does without a classifier.
+
+**Open-source equivalents** (the weights themselves are Microsoft's and not redistributable):
+
+- **`ternaus/midv-500-models`** (MIT, Vladimir Iglovikov): UNet + ResNet34, binary document
+  segmentation, trained on MIDV-500, weights released
+  (`unet_resnet34_2020-05-19.zip`, 90.7 MB). The closest pre-trained open-source document
+  segmenter. Preprocessing is ImageNet normalisation (mean 0.485/0.456/0.406, std 0.229/0.224/0.225).
+- **MobileNetV2 + UNet via `segmentation_models_pytorch`** (Apache-2.0): the same architecture
+  family as Lens's model, mobile-sized, but needs training on a document/page dataset. This is the
+  path that matches Lens's footprint; `midv500models` above shows the full training recipe
+  (Albumentations, 512 crop, ImageNet norm).
+- `pynicolas/FairScan` is also a segmentation scanner but GPL-3.0, so it is not usable here.
+
+**Pipeline to copy:** 256×256 RGB → int8 MobileNetV2/UNet segmenter → 256×256 mask → threshold →
+largest contour → `minAreaRect`/`approxPolyDP` → 4 corners → existing `DocumentQuad`. Preprocessing
+for the Lens graph could not be pinned down by probing (raw, `/255`, `[-1,1]` and ImageNet norm all
+produced a near-empty mask on synthetic/out-of-distribution frames), so treat the exact normalisation
+as unknown; the architecture, I/O and quantisation are established.
+
+## Tried the only pre-trained OSS document segmenter — not viable (2026-10-27)
+
+`ternaus/midv-500-models` (MIT) is the only ready-made open-source document segmentation model
+found. It is **UNet + ResNet34**, `classes=1`, trained on MIDV-500 **ID documents**, ImageNet
+normalisation. Converted it `ResNet34-UNet .pth → ONNX (torch.onnx, opset 16) → TFLite (onnx2tf)`:
+
+| precision | TFLite size |
+|---|---|
+| float32 | 97,774,952 B |
+| float16 | 48,922,304 B |
+| dynamic-range int8 | 24,639,392 B |
+
+Two blockers:
+
+1. **Size.** Even int8 is 23.5 MB, roughly doubling the app (44.5 MB → ~68 MB). fp16 (46.7 MB) would
+   blow the 74.5 MB budget outright.
+2. **Domain.** It is ID-document-specific. On the test card it produced only a partial 0.3–0.6 band;
+   on the real book page it lit only a left-edge sliver. It does not generalise to paper pages/books,
+   which is what actually needs detecting.
+
+Conclusion: there is no mobile-sized, general-document open-source segmentation model ready to drop
+in. Lens's model is a MobileNetV2 segmenter trained on general documents; to match it the realistic
+path is to **train a MobileNetV2-UNet (`segmentation_models_pytorch`, Apache-2.0) on a general
+document-page dataset** (receipts, pages, books, cards), then convert to int8 TFLite (~2–5 MB) and
+read corners off the mask contour. That is a training job, not a conversion job.
+
+`flutter analyze`/tests unchanged (no code integrated; this branch only carries the investigation).
