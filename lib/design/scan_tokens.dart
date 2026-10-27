@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 /// is a copy of another app's assets: the palette, the icon and the copy are ours.
 abstract final class ScanColor {
   // ---------------------------------------------------------------- brand --
-  /// The shutter blue: the launcher mark and the single accent in the UI.
+  /// The brand blue: behind the launcher mark and the single accent in the UI.
   static const accent = Color(0xFF0B57D0);
 
   /// A lighter blue for accents that sit on the dark stage.

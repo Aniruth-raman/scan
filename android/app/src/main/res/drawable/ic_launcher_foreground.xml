@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The shutter mark: a white aperture with six blade gaps around an open hexagon.
-  Geometry is generated (see the icon preview in the repo notes), not traced from
-  anything; the even-odd fill cuts the gaps out of the disc.
+  The mark: a document page with its top-right corner sliced off at 45 degrees.
+  40 x 54 dp, 14 dp chamfer, 3 dp corners, centred on the visible area.
+
+  The viewport is 108 to match the adaptive canvas. Do not shrink it to 72: the
+  foreground is drawn into the full 108 dp and only *clipped* to the inner 72 dp
+  when presented, so a 72 viewport zooms the page by 1.5.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -11,6 +14,5 @@
     android:viewportHeight="108">
     <path
         android:fillColor="#FFFFFF"
-        android:fillType="evenOdd"
-        android:pathData="M54,21 a33,33 0 1,0 0.01,0 z M66.00,54.00 L60.00,64.39 L48.00,64.39 L42.00,54.00 L48.00,43.61 L60.00,43.61 z M61.54,59.85 L72.11,83.67 L75.03,82.37 L64.46,58.55 z M52.71,63.45 L37.36,84.52 L39.95,86.40 L55.29,65.33 z M45.17,57.61 L19.25,54.85 L18.92,58.03 L44.83,60.79 z M46.46,48.15 L35.89,24.33 L32.97,25.63 L43.54,49.45 z M55.29,44.55 L70.64,23.48 L68.05,21.60 L52.71,42.67 z M62.83,50.39 L88.75,53.15 L89.08,49.97 L63.17,47.21 z" />
+        android:pathData="M34,30 A3,3 0 0 1 37,27 H60 L74,41 V78 A3,3 0 0 1 71,81 H37 A3,3 0 0 1 34,78 Z" />
 </vector>

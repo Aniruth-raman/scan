@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The pre-API-26 icon, which needs the blue behind the mark: the same page,
+  translated by (-18, -18) because this one fills the whole tile instead of
+  sitting in an adaptive canvas. Change both together.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="72"
+    android:viewportHeight="72">
+    <path
+        android:fillColor="@color/ic_launcher_background"
+        android:pathData="M0,0 H72 V72 H0 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M16,12 A3,3 0 0 1 19,9 H42 L56,23 V60 A3,3 0 0 1 53,63 H19 A3,3 0 0 1 16,60 Z" />
+</vector>
