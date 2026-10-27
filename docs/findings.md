@@ -509,3 +509,74 @@ document-page dataset** (receipts, pages, books, cards), then convert to int8 TF
 read corners off the mask contour. That is a training job, not a conversion job.
 
 `flutter analyze`/tests unchanged (no code integrated; this branch only carries the investigation).
+
+## How Lens actually turns a capture into a saved page (2026-10-27)
+
+This is the end-to-end scan pipeline, read from the shipped DEX (`lenscommon*`,
+`lensscan`, `lensquadmaskfinder`, `lenscommonactions` packages are **not** R8-renamed, so
+these are real method bodies, not guesses).
+
+| step | Lens | evidence |
+|---|---|---|
+| capture | CameraX; user-selectable resolution list (4:3 and 16:9 kept separately, MP shown as `%1$.1f MP (%2$d x %3$d)`) | `ev_337f702d…`, `ev_25709997…`, `lenshvc_resolution_format` |
+| detect (classic) | `PhotoProcessor.getCroppingQuads` → JNI `OfficeLensProductivity.GetCroppingQuad(+SetCenter)`, returns up to N quads as 8 float arrays | `ev_049d536d…` |
+| detect (DNN) | `ScanComponent.getDNNCroppingQuads` → `QuadMaskFinderComponent` → `QuadMaskFinder`/`RGB3PxQuadMaskFinder` → `QuadModel.TEAMS_MNV2_WB` = `lens/models/mnv2_ep42_wb_quant.ort` → `com.microsoft.scan.ScanNative` (JNI: `loadDNNModel`, `computeDNNQuad`, `getImageSegmentMaskArray`, `loadDocClassifier`, `loadImageSegmenationModels`, `loadCleanupModel`) | `ev_e6a23796…`, `ev_266559ea…`, `ev_60ff8291…`, `ev_70f9a217…`, `ev_714aad11…`, `ev_d39741ee…` |
+| which detector | `shouldUseDNNQuad()` = model loaded **and** feature gate `useDNNQuadChangeGate` **and** `isPerfCriteriaMet()`; `isGpuSupported`/`isNNAPISupported` tracked on the component | `ev_03b52331…` |
+| stability | `detectSceneChange`/`resetSceneChange`, `getSimilarQuadIndex`, `getClosestQuadIfAvailable`, viewport-restricted quads, point-must-lie-inside-quad | `ev_fafa6a43…` |
+| crop | homography from `CropData` → `GPUImagePerspectiveFilter`, on GPU; output size from `getCroppedImageSize` (native) = the rectified quad size, i.e. crop pixels at source resolution, no fixed cap | `ev_8d27eb2e…`, `ev_c53133eb…`, `ev_8bb2fb12…` |
+| enhance | `ProcessModeUtils.getImageFilters(mode)` → `GPUImageFilterApplier`; palette = Perspective, SegmentationMask, `Sauvola{Horizontal,Vertical,VerticalPassThroughColor}`, UnsharpMask, ColorControl, ToneCurve, OptimizedFilterGroup, GaussianBlur + photo filters | `ev_04ad2ccc…`, `ev_8b108008…`, `ev_2c7c1164…` |
+| non-GPU cleanup | `ILensScanComponent.cleanUpImage(bitmap, ScanFilter)` → `PhotoProcessor.cleanUpImage` → JNI `OfficeLensProductivity.CleanupImage`; `getFilterType` maps `Document→2`, `Whiteboard→3` — runs on **every** processed page | `ev_c30d2e9a…`, `ev_2ea0d669…`, `ev_faf56950…` |
+| modes | `ProcessMode` sealed hierarchy: `Scan{None, Document, Whiteboard, BlackAndWhite, GrayScale, SauvolaColor, SBCAdjust}`, `Photo{None, Auto, Mono, Lomoish, …}` | `ev_bc5e9cfc…` |
+| encode | `FileUtils.writeBitmapToFileAndSync(bitmap, …, (int)(imageCompression * 100), …)` → **imageCompression is JPEG quality**; default `MediaCompression.low` = **0.75** → q75. `MediaCompression`: none 1.0 / low .75 / medium .4 / high .3 | `ev_a922829b…`, `ev_0674a6e4…`, `ev_a3982daf…` |
+| DPI | default `ImageDPI.high` = **-1** (do not force a DPI); low = 150, medium = 220 | `ev_c349f4d2…`, `ev_f19baadc…` |
+| metadata/export | `ExifUtils.addExifMetaDataForProcessedImageIfEnabled` writes EXIF/DPI back; PDF export carries `PdfQuality{High, Medium, Low}` and `ImagesToPDFConverterConfig` | `ev_a922829b…`, `ev_f0464d94…`, `ev_bbacc976…` |
+
+Two corrections to the entry above ("What Lens's edge detection actually is"):
+
+1. **The `.ort` file is named in DEX and executed through a JNI wrapper, not "below the Java
+   layer" by an unknown runtime.** `QuadModel.<clinit>` hard-codes
+   `lens/models/mnv2_ep42_wb_quant.ort` as the `TEAMS_MNV2_WB` model path and
+   `com.microsoft.scan.ScanNative.loadDNNModel` loads it. No `libonnxruntime.so` and no ORT Java
+   class ship in the APK, so "ONNX Runtime" is still **not** established — what is established is
+   whose code owns the inference call.
+2. **TFLite is a separate, Java-visible stack** (`com.example.lenstensorflowlitewrapper`,
+   `org.tensorflow.lite.*`, `libtensorflowlite_jni_gms_client.so`, `assets/clf_model.tflite`).
+   It is not the `.ort` path.
+
+### Where `scan` diverges
+
+| | Lens | `scan` |
+|---|---|---|
+| live detector | DNN segmenter + classic line detector, chosen by perf gate; multiple quads | single M-LSD 512, one quad, smoothed by `quad_smoother` |
+| presence gate | 3-class doc classifier + "Not a scan?" nudge | none (null quad only) |
+| crop | GPU perspective filter, output = quad size at source pixels | `Matrix.setPolyToPoly` on CPU, cap `MAX_OUTPUT_EDGE 4096`, white fill |
+| enhancement | native `CleanupImage` on every page + Sauvola/unsharp/tone-curve palette per mode | 3 `ColorMatrix` presets, default **none** |
+| modes | Document / Whiteboard / Business Card / Photo / Auto | Scan / Whiteboard / Business card, where whiteboard = global B&W matrix |
+| JPEG quality | q75 default, per-identity preference | q95 fixed |
+| DPI / EXIF | written into the file | not written (plain `Bitmap.compress`) |
+| PDF | A4 + `PdfQuality` + `ImageDPI` | fixed `A4_WIDTH_PT = 595` for every page, page height from the image aspect |
+| resolution | user picks MP; crop keeps source pixels | `ResolutionPreset.max`, decode capped at 4096 |
+
+### Issues this comparison exposes in `scan` (no code changed yet)
+
+1. **No cleanup on the default path.** Lens runs `CleanupImage` on every page; `scan`'s default
+   filter is `none`, so the saved page is the raw crop. The `enhance` preset is a mild matrix and
+   `blackAndWhite` is a global 1.7× contrast, not Sauvola — under uneven light it clips, where
+   Lens's B&W/Grayscale are local adaptive thresholds.
+2. **`Whiteboard` capture mode lies.** `_CaptureMode.whiteboard` maps to `ScanFilter.blackAndWhite`,
+   so a whiteboard photo is saved as high-contrast greyscale. Lens's whiteboard is a colour-preserving
+   native cleanup.
+3. **PDF page geometry is resolution-blind.** `A4_WIDTH_PT = 595` regardless of pixel width: a
+   900 px page prints at ~109 dpi and a 4000 px page at ~484 dpi, and no DPI is recorded. Lens has
+   `ImageDPI` (150/220/native) and `PdfQuality` for exactly this.
+4. **No EXIF/DPI on saved JPEGs**, so downstream OCR/print tools cannot tell a page's physical size.
+5. **Re-crop is lossy and irreversible.** `review_screen._recrop` passes `_current.bytes` (the already
+   warped, already encoded page) back into `AdjustScreen`, so a second crop can only cut more of the
+   previous crop and costs another q95 generation. Lens keeps `OriginalImageInfo` and re-renders from
+   the capture.
+6. **Review edits add a generation.** Rotate/change-filter goes through `NativeImageKit.transform`,
+   re-encoding q95; Lens applies review filters to the source and encodes once at save.
+7. **Detection input is 480 px while the model wants 512**, so every still is resampled twice
+   (480 → 512) before inference. Lens feeds `requiredImageWidth/Height` exactly into a reused bitmap.
+8. **No resolution control** even though the camera is opened at `ResolutionPreset.max` and then
+   clipped to 4096 — a 50 MP capture silently loses most of its pixels with no way to ask otherwise.
