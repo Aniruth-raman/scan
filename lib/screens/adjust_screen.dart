@@ -65,7 +65,15 @@ class _AdjustScreenState extends State<AdjustScreen> {
   String? _error;
   int? _dragIndex;
 
-  /// Finger position in stage coordinates while a corner is being dragged; the
+  /// Edge being dragged by its midpoint pill, or null when a corner is dragged.
+  int? _dragEdge;
+
+  /// The finger and the edge's two corners at pan-down, in image space, so the
+  /// edge translates by the finger's delta instead of collapsing onto a corner.
+  Offset? _edgeStart;
+  List<math.Point<double>>? _edgeCorners;
+
+  /// Finger position in stage coordinates while a handle is being dragged; the
   /// loupe is anchored to it.
   Offset? _loupeAt;
 
@@ -263,39 +271,61 @@ class _AdjustScreenState extends State<AdjustScreen> {
 
   /// [origin] is the image's top-left in stage coordinates, so the loupe can be
   /// placed around the finger rather than around the image.
-  void _selectCorner(Offset localPosition, Offset origin, double scale) {
+  ///
+  /// A grab near an edge's midpoint pill selects that whole edge; anywhere else
+  /// selects the nearest corner.
+  void _selectHandle(Offset localPosition, Offset origin, double scale) {
     final quad = _quad;
     if (quad == null) return;
     final corners = quad.corners
         .map((point) => _toDisplay(Offset(point.x, point.y)) * scale)
         .toList();
-    var nearest = 0;
-    var nearestDistance = double.infinity;
-    for (var i = 0; i < corners.length; i++) {
-      final distance = (corners[i] - localPosition).distanceSquared;
-      if (distance < nearestDistance) {
-        nearestDistance = distance;
-        nearest = i;
-      }
+    final grab = classifyDragHandle(corners, localPosition);
+    if (grab.isEdge) {
+      final imageCorners = quad.corners.toList();
+      _dragEdge = grab.index;
+      _edgeStart = _fromDisplay(localPosition / scale);
+      _edgeCorners = [
+        imageCorners[grab.index],
+        imageCorners[(grab.index + 1) % 4],
+      ];
+    } else {
+      _dragIndex = grab.index;
     }
-    _dragIndex = nearest;
     setState(() => _loupeAt = localPosition + origin);
   }
 
   void _dragTo(Offset localPosition, Offset origin, double scale) {
-    final index = _dragIndex;
     final quad = _quad;
-    if (index == null || quad == null) return;
+    if (quad == null) return;
     final imagePoint = _fromDisplay(localPosition / scale);
-    final x = imagePoint.dx.clamp(0.0, (_imageWidth - 1).toDouble());
-    final y = imagePoint.dy.clamp(0.0, (_imageHeight - 1).toDouble());
     final corners = [
       quad.topLeft,
       quad.topRight,
       quad.bottomRight,
       quad.bottomLeft,
     ];
-    corners[index] = math.Point<double>(x, y);
+
+    final edge = _dragEdge;
+    if (edge != null) {
+      // Translate the whole side: both corners move by the finger's delta, so
+      // the side keeps its length and tilt instead of collapsing onto a point.
+      final start = _edgeStart!;
+      final initial = _edgeCorners!;
+      final dx = imagePoint.dx - start.dx;
+      final dy = imagePoint.dy - start.dy;
+      corners[edge] = _clampPoint(
+        Offset(initial[0].x + dx, initial[0].y + dy),
+      );
+      corners[(edge + 1) % 4] = _clampPoint(
+        Offset(initial[1].x + dx, initial[1].y + dy),
+      );
+    } else {
+      final index = _dragIndex;
+      if (index == null) return;
+      corners[index] = _clampPoint(imagePoint);
+    }
+
     final candidate = DocumentQuad(
       topLeft: corners[0],
       topRight: corners[1],
@@ -303,9 +333,9 @@ class _AdjustScreenState extends State<AdjustScreen> {
       bottomLeft: corners[3],
     );
     if (!candidate.isUsable) {
-      // A corner dragged past its opposite side would bow-tie the quad and the
-      // warp would bake mostly white. Keep the last outline that still holds a
-      // page; the loupe keeps tracking the finger.
+      // A corner or edge dragged past its opposite side would bow-tie the quad
+      // and the warp would bake mostly white. Keep the last outline that still
+      // holds a page; the loupe keeps tracking the finger.
       setState(() => _loupeAt = localPosition + origin);
       return;
     }
@@ -315,8 +345,17 @@ class _AdjustScreenState extends State<AdjustScreen> {
     });
   }
 
+  /// Keeps a dragged corner inside the image, in image coordinates.
+  math.Point<double> _clampPoint(Offset point) => math.Point(
+    point.dx.clamp(0.0, (_imageWidth - 1).toDouble()),
+    point.dy.clamp(0.0, (_imageHeight - 1).toDouble()),
+  );
+
   void _endDrag() {
     _dragIndex = null;
+    _dragEdge = null;
+    _edgeStart = null;
+    _edgeCorners = null;
     if (_loupeAt != null) setState(() => _loupeAt = null);
   }
 
@@ -412,7 +451,7 @@ class _AdjustScreenState extends State<AdjustScreen> {
               height: height,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onPanDown: (details) => _selectCorner(
+                onPanDown: (details) => _selectHandle(
                   details.localPosition,
                   Offset(left, top),
                   scale,
@@ -889,4 +928,40 @@ class _CropPainter extends CustomPainter {
   @override
   bool shouldRepaint(_CropPainter oldDelegate) =>
       oldDelegate.corners != corners;
+}
+
+/// Which crop handle a touch grabbed: the nearest corner, or the nearest edge
+/// midpoint when that is closer.
+///
+/// The crop stage draws corner grips *and* edge-midpoint pills, and both are
+/// draggable. Grabbing the middle of a side must move that whole side, not snap
+/// the nearest corner onto it (which collapses the side into a point). [corners]
+/// and [touch] share one coordinate space (display pixels).
+({int index, bool isEdge}) classifyDragHandle(List<Offset> corners, Offset touch) {
+  var cornerIndex = 0;
+  var cornerDistance = double.infinity;
+  for (var i = 0; i < corners.length; i++) {
+    final distance = (corners[i] - touch).distanceSquared;
+    if (distance < cornerDistance) {
+      cornerDistance = distance;
+      cornerIndex = i;
+    }
+  }
+
+  var edgeIndex = 0;
+  var edgeDistance = double.infinity;
+  for (var i = 0; i < corners.length; i++) {
+    final a = corners[i];
+    final b = corners[(i + 1) % corners.length];
+    final mid = Offset((a.dx + b.dx) / 2, (a.dy + b.dy) / 2);
+    final distance = (mid - touch).distanceSquared;
+    if (distance < edgeDistance) {
+      edgeDistance = distance;
+      edgeIndex = i;
+    }
+  }
+
+  return edgeDistance < cornerDistance
+      ? (index: edgeIndex, isEdge: true)
+      : (index: cornerIndex, isEdge: false);
 }
