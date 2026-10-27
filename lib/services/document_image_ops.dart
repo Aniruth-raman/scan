@@ -93,7 +93,7 @@ Future<RenderedPage> renderPage(
   required int fullWidth,
   required int fullHeight,
   ScanFilter filter = ScanFilter.none,
-  int quality = 95,
+  int quality = ScanProfile.lensQuality,
 }) async {
   final page = await NativeImageKit.warp(
     original,

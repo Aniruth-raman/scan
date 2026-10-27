@@ -31,9 +31,9 @@ class CameraScreen extends StatefulWidget {
 
 /// Capture modes. Each maps onto a tone preset rather than a fake label.
 enum _CaptureMode {
-  scan('SCAN', 'Scan', ScanFilter.none),
-  whiteboard('WHITEBOARD', 'Whiteboard', ScanFilter.blackAndWhite),
-  businessCard('BUSINESS CARD', 'Business card', ScanFilter.enhance);
+  scan('SCAN', 'Scan', ScanFilter.document),
+  whiteboard('WHITEBOARD', 'Whiteboard', ScanFilter.whiteboard),
+  businessCard('BUSINESS CARD', 'Business card', ScanFilter.document);
 
   const _CaptureMode(this.label, this.semanticLabel, this.filter);
 

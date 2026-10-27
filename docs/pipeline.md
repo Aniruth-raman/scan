@@ -164,10 +164,37 @@ SmartDoc 2015 (`CC BY 4.0`), `segmentation_models_pytorch` and M-LSD (`Apache-2.
 | S2 | yes | architecture yes, weights/size no | int8 model export, N-quad scoring |
 | S3 | **missing** | no | a non-proprietary classifier |
 | S4 | yes | yes (CPU, 4096 cap) | GPU path is optional |
-| S5 | 1 of 7 modes | no | implementing the filter set |
-| S6 | **missing** | no | writing the substitute cleanup |
-| S7 | fixed q95, no EXIF | no | profile plumbing |
-| S8 | fixed A4 width | no | profile plumbing |
+| S5 | **7 modes, implemented** | 3 exact, 1 inferred, 2 substitutes | see below |
+| S6 | substitute in place | direction yes, algorithm no | writing a real cleanup |
+| S7 | q75 + DPI + EXIF | yes | a settings UI for other values |
+| S8 | DPI-aware pages + quality | yes | - |
+
+### What S5/S7/S8 now do (2026-10-28)
+
+The tone stage is `render(bitmap, filterId)` in `ScanImageKit.kt`, one entry point, ids fixed
+by the channel contract:
+
+| id | mode | Lens label | implementation status |
+|---|---|---|---|
+| 0 | none | None | exact (pass-through) |
+| 1 | document | Lighten | **SUBSTITUTE** - grey-world WB + 2/98 % stretch, gamma 1.02 |
+| 2 | whiteboard | Whiteboard | **SUBSTITUTE** - as above with 0.2/99.5 % and gamma 1.08 |
+| 3 | blackAndWhite | B&W | **exact** - Sauvola `n=41`, span 4.88 %, `k=0.2`, `R=0.5`, floor `v*0.5` |
+| 4 | grayscale | Grayscale | **exact** - Rec. 601 `0.299/0.587/0.114` |
+| 5 | sauvolaColor | Document | formula exact, colour pass-through **inferred** |
+| 6 | sbcAdjust | Brighten | shape inferred (brightness +8, contrast 1.06); Lens's uniforms unrecovered |
+
+Encoding follows Lens: `ScanProfile.jpegQuality = 75` (`MediaCompression.low == 0.75`,
+`(int)(x * 100)`), `dpi = 300` (Lens's `ImageDPI.high == -1` cannot size a PDF, so 300 is our
+choice and an A4-width page maps to A4 exactly at 2480 px), and the DPI is stamped into the
+JPEG's APP1 block after the private file is written, before either copy is published.
+
+`writePdf` now sizes each page from its own pixels and that DPI, and `PdfQuality.high` embeds
+the saved page unchanged; `.medium` / `.low` re-encode at q75 / q50.
+
+Deliberate divergence to keep in mind: capture modes map `Scan -> document`,
+`Whiteboard -> whiteboard`, `Business card -> document` (no business-card cleanup was
+recovered, so it borrows the document substitute rather than doing nothing).
 
 ### Swap order (one stage per change, pipeline untouched)
 

@@ -38,12 +38,22 @@ class WarpedPage {
   final int height;
 }
 
-/// Tone presets, applied as a single 4x5 colour matrix on the GPU.
+/// Tone presets, mirroring Lens's `ProcessMode.Scan` palette.
+///
+/// The labels are the original's strings (`lenshvc_image_filter_scan_*`), which
+/// is why `document` reads "Lighten" and `sauvolaColor` reads "Document": in the
+/// shipped app those are the two different modes, not a typo.
+///
+/// [id] is part of the MethodChannel contract and must match the `FILTER_*`
+/// constants in `ScanImageKit.kt`.
 enum ScanFilter {
-  none(0, 'Original'),
-  enhance(1, 'Enhance'),
-  grayscale(2, 'Grayscale'),
-  blackAndWhite(3, 'Black & white');
+  none(0, 'None'),
+  document(1, 'Lighten'),
+  whiteboard(2, 'Whiteboard'),
+  blackAndWhite(3, 'B&W'),
+  grayscale(4, 'Grayscale'),
+  sauvolaColor(5, 'Document'),
+  sbcAdjust(6, 'Brighten');
 
   const ScanFilter(this.id, this.label);
 
@@ -51,13 +61,12 @@ enum ScanFilter {
   final String label;
 }
 
-/// The 4x5 colour matrix [ScanImageKit] bakes for [filter], so the crop stage
-/// can preview the exact tone that will be written into the page.
+/// Preview-only approximations of [ScanFilter], so the crop and review stages
+/// show the direction of the tone that will be written.
 ///
-/// Mirrors `filterFor()` in `ScanImageKit.kt`, including Android's
-/// `ColorMatrix.postConcat` order: values are row-major, the fifth column is a
-/// 0-255 translation, and `enhance` is the contrast matrix applied *after* the
-/// saturation lift.
+/// Only two of these are exact (identity and grayscale). The adaptive filters
+/// cannot be expressed as a colour matrix - the saved pixels come from the
+/// native renderer, which is the source of truth for every mode.
 List<double> colorMatrixFor(ScanFilter filter) {
   switch (filter) {
     case ScanFilter.none:
@@ -67,12 +76,18 @@ List<double> colorMatrixFor(ScanFilter filter) {
         0, 0, 1, 0, 0, //
         0, 0, 0, 1, 0, //
       ];
-    case ScanFilter.enhance:
-      return _concat(_contrast(1.12, -15), _saturation(1.18));
-    case ScanFilter.grayscale:
-      return _saturation(0);
+    case ScanFilter.document:
+      return _concat(_contrast(1.15, -10), _saturation(0.95));
+    case ScanFilter.whiteboard:
+      return _concat(_contrast(1.12, -8), _saturation(0.9));
     case ScanFilter.blackAndWhite:
       return _concat(_contrast(1.7, -89.6), _saturation(0));
+    case ScanFilter.grayscale:
+      return _saturation(0);
+    case ScanFilter.sauvolaColor:
+      return _concat(_contrast(1.35, -40), _saturation(1.0));
+    case ScanFilter.sbcAdjust:
+      return _concat(_contrast(1.06, 0), _brightness(8));
   }
 }
 
@@ -100,6 +115,14 @@ List<double> _contrast(double scale, double translate) => <double>[
   0, 0, 0, 1, 0, //
 ];
 
+/// A pure translation, i.e. what a brightness lift looks like in this space.
+List<double> _brightness(double delta) => <double>[
+  1, 0, 0, 0, delta, //
+  0, 1, 0, 0, delta, //
+  0, 0, 1, 0, delta, //
+  0, 0, 0, 1, 0, //
+];
+
 /// `outer * inner` for 4x5 affine colour matrices.
 List<double> _concat(List<double> outer, List<double> inner) {
   final out = List<double>.filled(20, 0);
@@ -114,6 +137,40 @@ List<double> _concat(List<double> outer, List<double> inner) {
     }
   }
   return out;
+}
+
+/// PDF size choice, mirroring Lens's `PdfQuality{High, Medium, Low}`.
+///
+/// High embeds the saved page JPEG unchanged, so choosing it costs no extra
+/// generation; Medium and Low re-encode the page smaller.
+enum PdfQuality { high, medium, low }
+
+/// The pipeline's settings, in one object.
+///
+/// Mirrors what Lens keeps per processed page: `ProcessMode`, the JPEG quality
+/// from `MediaCompression`, the `ImageDPI` written to the file, and the
+/// `PdfQuality` used at export.
+@immutable
+class ScanProfile {
+  const ScanProfile({
+    this.filter = ScanFilter.none,
+    this.jpegQuality = lensQuality,
+    this.dpi = lensDpi,
+    this.pdfQuality = PdfQuality.high,
+  });
+
+  /// Lens's default: `MediaCompression.low.getCompressionSize() == 0.75`, used
+  /// as `(int) (compression * 100)` when the page is written.
+  static const int lensQuality = 75;
+
+  /// Lens's default is "native" (`ImageDPI.high == -1`). A PDF still needs a
+  /// number, so 300 is used: 2480 px then maps to A4 width exactly.
+  static const int lensDpi = 300;
+
+  final ScanFilter filter;
+  final int jpegQuality;
+  final int dpi;
+  final PdfQuality pdfQuality;
 }
 
 /// One file sitting in the app's shared folders — captured here, or dropped in
@@ -200,7 +257,7 @@ abstract final class NativeImageKit {
     required int fullWidth,
     required int fullHeight,
     ScanFilter filter = ScanFilter.none,
-    int quality = 95,
+    int quality = ScanProfile.lensQuality,
   }) async {
     _requireAndroid();
     final result = await _channel.invokeMapMethod<String, dynamic>('warp', {
@@ -228,7 +285,7 @@ abstract final class NativeImageKit {
     Uint8List bytes, {
     int quarterTurns = 0,
     ScanFilter filter = ScanFilter.none,
-    int quality = 95,
+    int quality = ScanProfile.lensQuality,
   }) async {
     _requireAndroid();
     final result = await _channel.invokeMapMethod<String, dynamic>(
@@ -308,6 +365,16 @@ abstract final class NativeImageKit {
         0;
   }
 
+  /// Writes the page's DPI into its EXIF block, without re-encoding it.
+  ///
+  /// Lens stamps the processed page the same way, which is what lets a later
+  /// reader know the page's physical size.
+  static Future<void> setJpegDpi(String path, {int dpi = ScanProfile.lensDpi}) async {
+    _requireAndroid();
+    if (dpi <= 0) return;
+    await _channel.invokeMethod<bool>('setJpegDpi', {'path': path, 'dpi': dpi});
+  }
+
   /// Publishes a full-bleed multi-page PDF into shared Downloads and returns
   /// where it landed: the collection (`Download/Scan`) and the file name.
   ///
@@ -318,6 +385,8 @@ abstract final class NativeImageKit {
     required String name,
     required String recordPath,
     String folder = 'Scan',
+    int dpi = ScanProfile.lensDpi,
+    PdfQuality pdfQuality = PdfQuality.high,
   }) async {
     _requireAndroid();
     final result = await _channel.invokeMapMethod<String, dynamic>('writePdf', {
@@ -325,6 +394,8 @@ abstract final class NativeImageKit {
       'name': name,
       'folder': folder,
       'recordPath': recordPath,
+      'dpi': dpi,
+      'pdfQuality': pdfQuality.index,
     });
     if (result == null) throw StateError('writePdf returned no result');
     return (

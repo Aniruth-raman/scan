@@ -61,14 +61,18 @@ class ScanExporter {
   Future<ScanEntry> saveImage(
     Uint8List pageBytes, {
     String? title,
+    ScanProfile profile = const ScanProfile(),
   }) async {
     final now = DateTime.now();
     final effectiveTitle = title ?? defaultTitle(now);
     final file = _freeFile(effectiveTitle, '.jpg');
     await file.writeAsBytes(pageBytes, flush: true);
+    // Stamp the resolution before publishing, so the private record and the
+    // gallery copy are the same file content.
+    await NativeImageKit.setJpegDpi(file.path, dpi: profile.dpi);
     final published = await _publishWithRetry(
-      () => NativeImageKit.publishImage(
-        pageBytes,
+      () async => NativeImageKit.publishImage(
+        await file.readAsBytes(),
         name: fileStem(effectiveTitle),
         folder: imageFolder,
       ),
@@ -89,7 +93,10 @@ class ScanExporter {
   /// app storage (the tile) and a copy in `Download/Scan`.
   ///
   /// Returns the export's location (`Download/Scan/<title>.pdf`).
-  Future<String> savePdf(List<Uint8List> pages, {required String title}) async {
+  Future<String> savePdf(List<Uint8List> pages, {
+    required String title,
+    ScanProfile profile = const ScanProfile(),
+  }) async {
     if (pages.isEmpty) {
       throw ArgumentError.value(pages, 'pages', 'must not be empty');
     }
@@ -101,6 +108,8 @@ class ScanExporter {
         name: fileStem(title),
         folder: pdfFolder,
         recordPath: file.path,
+        dpi: profile.dpi,
+        pdfQuality: profile.pdfQuality,
       ),
     );
 

@@ -50,6 +50,8 @@ void main() {
             'width': 32,
             'height': 24,
           };
+        case 'setJpegDpi':
+          return true;
         case 'transform':
           return <String, dynamic>{
             'bytes': Uint8List.fromList(<int>[4, 5, 6]),

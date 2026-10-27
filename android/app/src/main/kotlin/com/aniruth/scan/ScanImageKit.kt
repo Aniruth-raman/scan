@@ -8,8 +8,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.ColorMatrix
-import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.media.ExifInterface
@@ -26,6 +24,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.concurrent.Executors
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -62,6 +61,7 @@ class ScanImageKit(private val context: Context) : MethodChannel.MethodCallHandl
                     "transform" -> transform(call)
                     "thumbnail" -> thumbnail(call)
                     "publishImage" -> publishImage(call)
+                    "setJpegDpi" -> setJpegDpi(call)
                     "writePdf" -> writePdf(call)
                     "listShared" -> listShared()
                     "deleteShared" -> deleteShared(call)
@@ -138,6 +138,28 @@ class ScanImageKit(private val context: Context) : MethodChannel.MethodCallHandl
             relativeTo = Environment.DIRECTORY_PICTURES,
             legacyDirectory = Environment.DIRECTORY_PICTURES
         )
+    }
+
+    // --------------------------------------------------------- setJpegDpi --
+
+    /**
+     * Stamps the saved page with a resolution so print and OCR tools know its
+     * physical size. Lens does the same via `addExifMetaDataForProcessedImage`.
+     *
+     * `ExifInterface.saveAttributes` rewrites the APP1 segment only - the JPEG
+     * scan data is untouched, so this is not another generation.
+     */
+    private fun setJpegDpi(call: MethodCall): Boolean {
+        val path = call.argument<String>("path")
+            ?: throw IllegalArgumentException("path required")
+        val dpi = call.argument<Int>("dpi") ?: 0
+        if (dpi <= 0) return false
+        val exif = ExifInterface(path)
+        exif.setAttribute(ExifInterface.TAG_X_RESOLUTION, dpi.toString())
+        exif.setAttribute(ExifInterface.TAG_Y_RESOLUTION, dpi.toString())
+        exif.setAttribute(ExifInterface.TAG_RESOLUTION_UNIT, "2") // inches
+        exif.saveAttributes()
+        return true
     }
 
     // --------------------------------------------------------- listShared --
@@ -398,10 +420,13 @@ class ScanImageKit(private val context: Context) : MethodChannel.MethodCallHandl
             val out = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(out)
             val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
-            filterFor(filterId)?.let { paint.colorFilter = it }
             // Crop regions can leave uncovered pixels at the border.
             canvas.drawColor(Color.WHITE)
             canvas.drawBitmap(src, inverse, paint)
+
+            // The tone stage runs on the rectified page, so an adaptive filter
+            // sees the page's own statistics rather than the camera frame's.
+            render(out, filterId)
 
             val encoded = encode(out, quality)
             val result = mapOf(
@@ -443,17 +468,7 @@ class ScanImageKit(private val context: Context) : MethodChannel.MethodCallHandl
                 if (rotated !== page) page.recycle()
                 page = rotated
             }
-            val tone = filterFor(filterId)
-            if (tone != null) {
-                val tinted = Bitmap.createBitmap(
-                    page.width, page.height, Bitmap.Config.ARGB_8888
-                )
-                val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
-                paint.colorFilter = tone
-                Canvas(tinted).drawBitmap(page, 0f, 0f, paint)
-                page.recycle()
-                page = tinted
-            }
+            render(page, filterId)
             return mapOf(
                 "bytes" to encode(page, quality),
                 "width" to page.width,
@@ -505,10 +520,22 @@ class ScanImageKit(private val context: Context) : MethodChannel.MethodCallHandl
         val name = call.argument<String>("name")?.takeIf { it.isNotBlank() } ?: "Scan"
         val folder = call.argument<String>("folder")?.takeIf { it.isNotBlank() } ?: SHARED_FOLDER
         val recordPath = call.argument<String>("recordPath")?.takeIf { it.isNotBlank() }
+        // 0 = High: pages are embedded as they are saved, no extra generation.
+        // 1 = Medium / 2 = Low re-encode, which is what makes them smaller.
+        val pdfQuality = call.argument<Int>("pdfQuality") ?: 0
+        // 0 keeps the page's own geometry (A4 width at 300 dpi).
+        val dpi = call.argument<Int>("dpi") ?: 0
         if (pages.isEmpty()) throw IllegalArgumentException("pages must not be empty")
 
-        val images = pages.map { jpegInfo(it) }
-        val out = ByteArrayOutputStream(pages.sumOf { it.size } + 8192)
+        val embedded = pages.map {
+            when (pdfQuality) {
+                1 -> reencodeJpeg(it, 75)
+                2 -> reencodeJpeg(it, 50)
+                else -> it
+            }
+        }
+        val images = embedded.map { jpegInfo(it) }
+        val out = ByteArrayOutputStream(embedded.sumOf { it.size } + 8192)
         val offsets = LongArray(pages.size * 3 + 3)
         var objectId = 3
 
@@ -527,14 +554,18 @@ class ScanImageKit(private val context: Context) : MethodChannel.MethodCallHandl
         offsets[2] = out.size().toLong()
         write("2 0 obj\n<< /Type /Pages /Kids [ $kids ] /Count ${pages.size} >>\nendobj\n")
 
-        pages.forEachIndexed { index, jpeg ->
+        pages.forEachIndexed { index, _ ->
             val pageId = 3 + index * 3
             val contentId = pageId + 1
             val imageId = pageId + 2
             val image = images[index]
 
-            val widthPt = A4_WIDTH_PT
-            val heightPt = (A4_WIDTH_PT * image.height.toFloat() / image.width)
+            val widthPt = if (dpi > 0) {
+                (image.width * 72.0 / dpi).roundToInt().coerceAtLeast(64)
+            } else {
+                A4_WIDTH_PT
+            }
+            val heightPt = (widthPt.toFloat() * image.height / image.width)
                 .roundToInt()
                 .coerceAtLeast(64)
 
@@ -561,9 +592,9 @@ class ScanImageKit(private val context: Context) : MethodChannel.MethodCallHandl
                 "$imageId 0 obj\n<< /Type /XObject /Subtype /Image " +
                     "/Width ${image.width} /Height ${image.height} " +
                     "/ColorSpace $colorSpace /BitsPerComponent 8 " +
-                    "/Filter /DCTDecode /Length ${jpeg.size} >>\nstream\n"
+                    "/Filter /DCTDecode /Length ${embedded[index].size} >>\nstream\n"
             )
-            out.write(jpeg)
+            out.write(embedded[index])
             write("\nendstream\nendobj\n")
             objectId = imageId + 1
         }
@@ -806,51 +837,287 @@ class ScanImageKit(private val context: Context) : MethodChannel.MethodCallHandl
         return Bitmap.createScaledBitmap(source, w, h, true)
     }
 
+    /** Re-encodes a page JPEG at [quality]; used when the PDF asks for less. */
+    private fun reencodeJpeg(bytes: ByteArray, quality: Int): ByteArray {
+        val bitmap = decodeOriented(bytes, MAX_DECODE_EDGE)
+        return try {
+            encode(bitmap, quality)
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
     private fun encode(bitmap: Bitmap, quality: Int): ByteArray {
         val out = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(1, 100), out)
         return out.toByteArray()
     }
 
+    // ------------------------------------------------------------- render --
+    //
+    // The tone stage, reproducing Lens's `ProcessMode.Scan` palette. Lens runs the
+    // equivalent work on the GPU (gpuimage, Apache-2.0); this is the same maths on
+    // one bitmap so no second library is needed. The two modes whose Lens
+    // implementation is opaque native code (`CleanupImage`) are marked SUBSTITUTE
+    // and will be replaced without changing the surrounding pipeline.
+
+    private fun render(bitmap: Bitmap, filterId: Int) {
+        when (filterId) {
+            FILTER_DOCUMENT -> applyCleanup(bitmap, whiteboard = false) // SUBSTITUTE
+            FILTER_WHITEBOARD -> applyCleanup(bitmap, whiteboard = true) // SUBSTITUTE
+            FILTER_BLACK_AND_WHITE -> applySauvola(bitmap, keepColour = false)
+            FILTER_GRAYSCALE -> applyGrayscale(bitmap)
+            FILTER_SAUVOLA_COLOUR -> applySauvola(bitmap, keepColour = true)
+            FILTER_SBC_ADJUST -> applyBrightnessContrast(bitmap)
+        }
+    }
+
+    /** Rec. 601 luma, the weights Lens's shaders use (0.299/0.587/0.114). */
+    private fun luma(pixel: Int): Int {
+        val r = pixel shr 16 and 0xFF
+        val g = pixel shr 8 and 0xFF
+        val b = pixel and 0xFF
+        return (299 * r + 587 * g + 114 * b) / 1000
+    }
+
+    private fun applyGrayscale(bitmap: Bitmap) {
+        val w = bitmap.width
+        val row = IntArray(w)
+        for (y in 0 until bitmap.height) {
+            bitmap.getPixels(row, 0, w, 0, y, w, 1)
+            for (x in 0 until w) {
+                val p = row[x]
+                val v = luma(p)
+                row[x] = (p and 0xFF000000.toInt()) or (v shl 16) or (v shl 8) or v
+            }
+            bitmap.setPixels(row, 0, w, 0, y, w, 1)
+        }
+    }
+
     /**
-     * Tone presets. These are the same three the scanner exposes; all of them
-     * are a single 4x5 colour matrix, which the GPU applies for free.
+     * Believed-equivalent "Brighten": a point brightness/contrast lift.
+     *
+     * Lens exposes this as `SBCAdjust` through a colour-control shader whose
+     * uniform values are set at runtime and were not recovered. The shape is
+     * inferred; the strength is ours.
      */
-    private fun filterFor(id: Int): ColorMatrixColorFilter? = when (id) {
-        1 -> { // enhance: gentle contrast + saturation lift
-            val matrix = ColorMatrix()
-            matrix.setSaturation(1.18f)
-            val contrast = ColorMatrix(
-                floatArrayOf(
-                    1.12f, 0f, 0f, 0f, -15f,
-                    0f, 1.12f, 0f, 0f, -15f,
-                    0f, 0f, 1.12f, 0f, -15f,
-                    0f, 0f, 0f, 1f, 0f
-                )
-            )
-            matrix.postConcat(contrast)
-            ColorMatrixColorFilter(matrix)
+    private fun applyBrightnessContrast(bitmap: Bitmap) {
+        val w = bitmap.width
+        val row = IntArray(w)
+        val brightness = 8
+        val contrast = 1.06f
+        val lut = IntArray(256) { v ->
+            (((v - 128) * contrast) + 128 + brightness).roundToInt().coerceIn(0, 255)
         }
-        2 -> { // greyscale
-            val matrix = ColorMatrix()
-            matrix.setSaturation(0f)
-            ColorMatrixColorFilter(matrix)
+        for (y in 0 until bitmap.height) {
+            bitmap.getPixels(row, 0, w, 0, y, w, 1)
+            for (x in 0 until w) {
+                val p = row[x]
+                row[x] = (p and 0xFF000000.toInt()) or
+                    (lut[p shr 16 and 0xFF] shl 16) or
+                    (lut[p shr 8 and 0xFF] shl 8) or
+                    lut[p and 0xFF]
+            }
+            bitmap.setPixels(row, 0, w, 0, y, w, 1)
         }
-        3 -> { // black and white: strong contrast on a desaturated plate
-            val matrix = ColorMatrix()
-            matrix.setSaturation(0f)
-            val contrast = ColorMatrix(
-                floatArrayOf(
-                    1.7f, 0f, 0f, 0f, -89.6f,
-                    0f, 1.7f, 0f, 0f, -89.6f,
-                    0f, 0f, 1.7f, 0f, -89.6f,
-                    0f, 0f, 0f, 1f, 0f
-                )
-            )
-            matrix.postConcat(contrast)
-            ColorMatrixColorFilter(matrix)
+    }
+
+    /**
+     * Sauvola adaptive threshold, exactly as Lens's shipped shader pair does it.
+     *
+     * Recovered from `classes5.dex`: a two-axis box of `n = 41` samples spanning
+     * `5 / (n * 100)` of the frame per step (4.88 % per axis), `k = 0.2`,
+     * `R = 0.5`, and a `darkenFactor = 0.5` floor - so "below threshold" is a
+     * half-grey plate, not black.
+     *
+     * `threshold = mean * (1 + k * ((s / R) - 1))`, `s = sqrt(|E[x^2] - E[x]^2|)`.
+     */
+    private fun applySauvola(bitmap: Bitmap, keepColour: Boolean) {
+        val w = bitmap.width
+        val h = bitmap.height
+        if (w == 0 || h == 0) return
+
+        val radiusX = max(1, (SAUVOLA_SPAN * w).roundToInt())
+        val radiusY = max(1, (SAUVOLA_SPAN * h).roundToInt())
+
+        // Luma plane once: the box sums read it repeatedly, the bitmap does not.
+        val plane = ByteArray(w * h)
+        val row = IntArray(w)
+        for (y in 0 until h) {
+            bitmap.getPixels(row, 0, w, 0, y, w, 1)
+            val base = y * w
+            for (x in 0 until w) plane[base + x] = luma(row[x]).toByte()
         }
-        else -> null
+
+        val colSum = LongArray(w)
+        val colSqSum = LongArray(w)
+        var top = 0
+        var bottom = min(h - 1, radiusY)
+
+        fun addRow(y: Int, sign: Int) {
+            val base = y * w
+            for (x in 0 until w) {
+                val v = plane[base + x].toLong() and 0xFF
+                colSum[x] += sign * v
+                colSqSum[x] += sign * v * v
+            }
+        }
+
+        for (y in 0..bottom) addRow(y, 1)
+
+        val out = IntArray(w)
+        for (y in 0 until h) {
+            bitmap.getPixels(out, 0, w, 0, y, w, 1)
+
+            // Horizontal box over the vertical sums, clamped at the edges.
+            var sum = 0L
+            var sqSum = 0L
+            var count = 0L
+            for (x in 0..min(w - 1, radiusX)) {
+                sum += colSum[x]
+                sqSum += colSqSum[x]
+                count += bottom - top + 1
+            }
+            var windowPixels = count
+
+            for (x in 0 until w) {
+                val mean = sum.toDouble() / windowPixels
+                val meanSq = sqSum.toDouble() / windowPixels
+                val s = sqrt(abs(meanSq - mean * mean))
+                val threshold = mean * (1.0 + SAUVOLA_K * ((s / SAUVOLA_R) - 1.0))
+
+                val p = out[x]
+                val v = plane[y * w + x].toInt() and 0xFF
+                out[x] = if (v >= threshold) {
+                    (p and 0xFF000000.toInt()) or 0x00FFFFFF
+                } else if (keepColour) {
+                    (p and 0xFF000000.toInt()) or
+                        ((p shr 16 and 0xFF) shr 1 shl 16) or
+                        ((p shr 8 and 0xFF) shr 1 shl 8) or
+                        ((p and 0xFF) shr 1)
+                } else {
+                    val grey = (v * SAUVOLA_DARKEN).toInt().coerceIn(0, 255)
+                    (p and 0xFF000000.toInt()) or (grey shl 16) or (grey shl 8) or grey
+                }
+
+                // Slide the horizontal window: drop x - radiusX, add x + radiusX + 1.
+                val drop = x - radiusX
+                if (drop >= 0) {
+                    sum -= colSum[drop]
+                    sqSum -= colSqSum[drop]
+                    windowPixels -= bottom - top + 1
+                }
+                val add = x + radiusX + 1
+                if (add < w) {
+                    sum += colSum[add]
+                    sqSum += colSqSum[add]
+                    windowPixels += bottom - top + 1
+                }
+            }
+            bitmap.setPixels(out, 0, w, 0, y, w, 1)
+
+            // Slide the vertical window.
+            if (y + 1 < h) {
+                val newBottom = min(h - 1, y + 1 + radiusY)
+                if (newBottom > bottom) {
+                    bottom = newBottom
+                    addRow(bottom, 1)
+                }
+                if (top < y + 1 - radiusY) {
+                    addRow(top, -1)
+                    top++
+                }
+            }
+        }
+    }
+
+    /**
+     * SUBSTITUTE for Lens's `CleanupImage(Document | Whiteboard)`.
+     *
+     * That stage is opaque native code inside `libpixsdk`/`libOfficeLens.so`: only
+     * its effect is visible, the algorithm is not. This is a grey-world white
+     * balance plus a percentile contrast stretch, which reproduces the visible
+     * direction (neutral paper, readable text) without claiming to be the original.
+     * Replace this function alone when an open implementation is chosen.
+     */
+    private fun applyCleanup(bitmap: Bitmap, whiteboard: Boolean) {
+        val w = bitmap.width
+        val h = bitmap.height
+        if (w == 0 || h == 0) return
+
+        val histogram = IntArray(256)
+        var sumR = 0L
+        var sumG = 0L
+        var sumB = 0L
+        val row = IntArray(w)
+        for (y in 0 until h) {
+            bitmap.getPixels(row, 0, w, 0, y, w, 1)
+            for (x in 0 until w) {
+                val p = row[x]
+                val r = p shr 16 and 0xFF
+                val g = p shr 8 and 0xFF
+                val b = p and 0xFF
+                sumR += r
+                sumG += g
+                sumB += b
+                histogram[(299 * r + 587 * g + 114 * b) / 1000]++
+            }
+        }
+
+        val total = (w.toLong() * h).toDouble()
+        val meanR = sumR / total
+        val meanG = sumG / total
+        val meanB = sumB / total
+        val mean = (meanR + meanG + meanB) / 3.0
+        fun gain(channel: Double): Float =
+            (mean / channel.coerceAtLeast(1.0)).toFloat().coerceIn(0.85f, 1.20f)
+
+        // Whiteboards keep more of the top range so the board stays white.
+        val lowPct = if (whiteboard) 0.002 else 0.02
+        val highPct = if (whiteboard) 0.995 else 0.98
+        var acc = 0L
+        var low = 0
+        var high = 255
+        val lowTarget = (total * lowPct).toLong()
+        val highTarget = (total * highPct).toLong()
+        for (v in 0..255) {
+            acc += histogram[v]
+            if (acc <= lowTarget) low = v
+            if (acc <= highTarget) high = v
+        }
+        if (high - low < 16) {
+            low = 0
+            high = 255
+        }
+
+        val span = (high - low).toFloat().coerceAtLeast(1f)
+        val gamma = if (whiteboard) 1.08f else 1.02f
+        val lut = IntArray(256) { v ->
+            val stretched = ((v - low) / span).coerceIn(0f, 1f)
+            (Math.pow(stretched.toDouble(), gamma.toDouble()) * 255.0)
+                .roundToInt()
+                .coerceIn(0, 255)
+        }
+        val gainR = gain(meanR)
+        val gainG = gain(meanG)
+        val gainB = gain(meanB)
+
+        // Per-channel gains fold into the same table to stay a single pass.
+        val lutR = IntArray(256) { lut[(it * gainR).roundToInt().coerceIn(0, 255)] }
+        val lutG = IntArray(256) { lut[(it * gainG).roundToInt().coerceIn(0, 255)] }
+        val lutB = IntArray(256) { lut[(it * gainB).roundToInt().coerceIn(0, 255)] }
+
+        for (y in 0 until h) {
+            bitmap.getPixels(row, 0, w, 0, y, w, 1)
+            for (x in 0 until w) {
+                val p = row[x]
+                row[x] = (p and 0xFF000000.toInt()) or
+                    (lutR[p shr 16 and 0xFF] shl 16) or
+                    (lutG[p shr 8 and 0xFF] shl 8) or
+                    lutB[p and 0xFF]
+            }
+            bitmap.setPixels(row, 0, w, 0, y, w, 1)
+        }
     }
 
     companion object {
@@ -867,6 +1134,25 @@ class ScanImageKit(private val context: Context) : MethodChannel.MethodCallHandl
 
         /** Long edge of the preview published for an indexed image. */
         const val THUMB_EDGE = 240
+
+        // Tone-stage ids. These mirror Lens's `ProcessMode.Scan` palette and are
+        // part of the channel contract, so they must match `ScanFilter` in Dart.
+        const val FILTER_DOCUMENT = 1
+        const val FILTER_WHITEBOARD = 2
+        const val FILTER_BLACK_AND_WHITE = 3
+        const val FILTER_GRAYSCALE = 4
+        const val FILTER_SAUVOLA_COLOUR = 5
+        const val FILTER_SBC_ADJUST = 6
+
+        /**
+         * Sauvola constants, read from Lens's shipped shader text
+         * (`classes5.dex`): `n = 41` samples over `5 / (n * 100)` of the frame
+         * per step, so the window radius is half of 4.88 % of the axis.
+         */
+        const val SAUVOLA_SPAN = 0.0244f
+        const val SAUVOLA_K = 0.2
+        const val SAUVOLA_R = 0.5
+        const val SAUVOLA_DARKEN = 0.5f
 
         /** Must match the FileProvider authority declared in AndroidManifest.xml. */
         const val FILE_PROVIDER_SUFFIX = ".scanfileprovider"
