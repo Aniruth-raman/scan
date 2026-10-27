@@ -1,0 +1,15 @@
+DocAligner document-corner model
+=================================
+
+This app bundles the DocAligner corner-detection model.
+
+  Model:  lcnet100_h_e_bifpn_256_fp32.onnx
+  Source: https://github.com/DocsaidLab/DocAligner  (release 1.1.1)
+  Author: DocsaidLab (Ze Yuan)
+  Licence: Apache License, Version 2.0
+           http://www.apache.org/licenses/LICENSE-2.0
+
+The ONNX graph was converted to TFLite with onnx2tf for this app; the only
+graph change was lowering the BiFPN weighted-fusion Einsum (`i,i...->...`)
+into Reshape/Mul/ReduceSum, which is numerically identical. The licence above
+applies to the model weights.

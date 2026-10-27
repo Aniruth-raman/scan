@@ -1,148 +1,123 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:scan/services/document_detector.dart';
 
-/// Splits an edge into [count] short segments, the way M-LSD reports a straight
-/// border as many small pieces that the merge step has to collapse back into
-/// one line.
-List<Segment> _edge(
-  math.Point<double> from,
-  math.Point<double> to, {
-  int count = 5,
+/// Builds a [size] x [size] x 4 heatmap with a Gaussian blob for each corner,
+/// at the given heatmap-space centres, in DocAligner's channel order
+/// (top-left, top-right, bottom-right, bottom-left).
+Float32List _heatmapsWithCorners(
+  int size,
+  List<(double, double)> centres, {
+  double peak = 0.9,
+  double sigma = 1.5,
 }) {
-  final segments = <Segment>[];
-  for (var i = 0; i < count; i++) {
-    final t0 = i / count;
-    final t1 = (i + 1) / count;
-    segments.add(
-      Segment(
-        from.x + (to.x - from.x) * t0,
-        from.y + (to.y - from.y) * t0,
-        from.x + (to.x - from.x) * t1,
-        from.y + (to.y - from.y) * t1,
-      ),
-    );
+  final data = Float32List(size * size * 4);
+  for (var c = 0; c < 4; c++) {
+    final (cx, cy) = centres[c];
+    for (var y = 0; y < size; y++) {
+      for (var x = 0; x < size; x++) {
+        final dx = x - cx;
+        final dy = y - cy;
+        data[(y * size + x) * 4 + c] =
+            peak * math.exp(-(dx * dx + dy * dy) / (2 * sigma * sigma));
+      }
+    }
   }
-  return segments;
+  return data;
 }
 
-/// A page seen slightly in perspective, inside a 512 px reference frame.
-const _topLeft = math.Point<double>(96, 72);
-const _topRight = math.Point<double>(410, 104);
-const _bottomRight = math.Point<double>(392, 430);
-const _bottomLeft = math.Point<double>(80, 398);
-
-List<Segment> _pageEdgeSegments() => [
-      ..._edge(_topLeft, _topRight),
-      ..._edge(_topRight, _bottomRight),
-      ..._edge(_bottomRight, _bottomLeft),
-      ..._edge(_bottomLeft, _topLeft),
-    ];
-
 void main() {
-  group('detectQuadFromSegments', () {
-    test('recovers the four corners of a skewed page', () {
-      final quad = detectQuadFromSegments(
-        _pageEdgeSegments(),
-        frameWidth: 512,
-        frameHeight: 512,
-      );
-
-      expect(quad, isNotNull, reason: 'four clean borders should fit a quad');
-      final corners = quad!.corners.toList();
-      const expected = [_topLeft, _topRight, _bottomRight, _bottomLeft];
-      for (var i = 0; i < 4; i++) {
-        final dx = corners[i].x - expected[i].x;
-        final dy = corners[i].y - expected[i].y;
-        expect(
-          math.sqrt(dx * dx + dy * dy),
-          lessThan(6),
-          reason: 'corner $i should land on the page corner',
-        );
-      }
-    });
-
-    test('scales the quad onto the requested frame', () {
-      final quad = detectQuadFromSegments(
-        _pageEdgeSegments(),
-        frameWidth: 1024,
-        frameHeight: 768,
+  group('detectQuadFromHeatmaps', () {
+    test('recovers the four corner blobs and scales them to the frame', () {
+      const size = 32;
+      final corners = <(double, double)>[
+        (6, 6),
+        (26, 6),
+        (26, 26),
+        (6, 26),
+      ];
+      final quad = detectQuadFromHeatmaps(
+        _heatmapsWithCorners(size, corners),
+        heatmapSize: size,
+        inputSize: size,
+        pad: 0,
+        frameWidth: 320,
+        frameHeight: 320,
       );
 
       expect(quad, isNotNull);
-      // 512-wide reference space maps onto the frame's width and height.
-      expect(quad!.topLeft.x, closeTo(_topLeft.x * 2, 12));
-      expect(quad.topLeft.y, closeTo(_topLeft.y * 1.5, 9));
+      // Heatmap pixel p maps to (p + 0.5) * 320/32 - 0.5 = (p + 0.5)*10 - 0.5.
+      double frame(double p) => (p + 0.5) * 320 / size - 0.5;
+
+      expect(quad!.topLeft.x, closeTo(frame(6), 2));
+      expect(quad.topLeft.y, closeTo(frame(6), 2));
+      expect(quad.topRight.x, closeTo(frame(26), 2));
+      expect(quad.topRight.y, closeTo(frame(6), 2));
+      expect(quad.bottomRight.x, closeTo(frame(26), 2));
+      expect(quad.bottomRight.y, closeTo(frame(26), 2));
+      expect(quad.bottomLeft.x, closeTo(frame(6), 2));
+      expect(quad.bottomLeft.y, closeTo(frame(26), 2));
+      // The recovered corners still describe a usable page.
+      expect(quad.isUsable, isTrue);
     });
 
-    test('keeps corner order clockwise from top-left', () {
-      final quad = detectQuadFromSegments(
-        _pageEdgeSegments(),
-        frameWidth: 512,
-        frameHeight: 512,
-      )!;
-
-      expect(quad.topLeft.x, lessThan(quad.topRight.x));
-      expect(quad.topRight.y, lessThan(quad.bottomRight.y));
-      expect(quad.bottomLeft.x, lessThan(quad.bottomRight.x));
-      expect(quad.topLeft.y, lessThan(quad.bottomLeft.y));
-    });
-
-    test('needs at least four segments', () {
-      final quad = detectQuadFromSegments(
-        _pageEdgeSegments().take(3).toList(),
-        frameWidth: 512,
-        frameHeight: 512,
+    test('an empty frame has no corner above the threshold', () {
+      final quad = detectQuadFromHeatmaps(
+        Float32List(32 * 32 * 4), // all zero
+        heatmapSize: 32,
+        inputSize: 32,
+        pad: 0,
+        frameWidth: 320,
+        frameHeight: 320,
       );
       expect(quad, isNull);
     });
 
-    test('rejects a document that only spans a sliver of the frame', () {
-      final tiny = <Segment>[
-        ..._edge(
-          const math.Point<double>(10, 10),
-          const math.Point<double>(60, 10),
-          count: 2,
-        ),
-        ..._edge(
-          const math.Point<double>(60, 10),
-          const math.Point<double>(60, 50),
-          count: 2,
-        ),
-        ..._edge(
-          const math.Point<double>(60, 50),
-          const math.Point<double>(10, 50),
-          count: 2,
-        ),
-        ..._edge(
-          const math.Point<double>(10, 50),
-          const math.Point<double>(10, 10),
-          count: 2,
-        ),
-      ];
-
-      final quad = detectQuadFromSegments(
-        tiny,
-        frameWidth: 512,
-        frameHeight: 512,
+    test('a missing corner map rejects the whole quad', () {
+      final heatmaps = _heatmapsWithCorners(32, const [
+        (6, 6),
+        (26, 6),
+        (26, 26),
+        (6, 26),
+      ]);
+      // Wipe the bottom-left channel only.
+      for (var i = 0; i < 32 * 32; i++) {
+        heatmaps[i * 4 + 3] = 0;
+      }
+      final quad = detectQuadFromHeatmaps(
+        heatmaps,
+        heatmapSize: 32,
+        inputSize: 32,
+        pad: 0,
+        frameWidth: 320,
+        frameHeight: 320,
       );
-      expect(quad, isNull, reason: 'below the minimum area fraction');
+      expect(quad, isNull, reason: 'all four corners are required');
     });
 
-    test('ignores scattered segments with no closed outline', () {
-      final noise = <Segment>[
-        const Segment(20, 20, 60, 24),
-        const Segment(300, 40, 340, 46),
-        const Segment(120, 300, 160, 330),
-        const Segment(400, 380, 430, 410),
-        const Segment(200, 200, 230, 210),
-        const Segment(60, 420, 90, 430),
-      ];
-      expect(
-        detectQuadFromSegments(noise, frameWidth: 512, frameHeight: 512),
-        isNull,
+    test('the largest blob wins over a stray speck', () {
+      const size = 32;
+      final heatmaps = _heatmapsWithCorners(size, const [
+        (6, 6),
+        (26, 6),
+        (26, 26),
+        (6, 26),
+      ]);
+      // Add a strong but tiny speck in the top-left channel, away from the blob.
+      heatmaps[(20 * size + 20) * 4 + 0] = 0.95;
+      final quad = detectQuadFromHeatmaps(
+        heatmaps,
+        heatmapSize: size,
+        inputSize: size,
+        pad: 0,
+        frameWidth: 320,
+        frameHeight: 320,
       );
+      expect(quad, isNotNull);
+      // Still the real top-left blob, not the one-pixel speck.
+      expect(quad!.topLeft.x, closeTo((6 + 0.5) * 10 - 0.5, 2));
     });
   });
 
@@ -161,7 +136,6 @@ void main() {
     });
 
     test('a perspective page is usable', () {
-      // A page seen off-axis: the far edge is shorter than the near one.
       const quad = DocumentQuad(
         topLeft: math.Point(180, 120),
         topRight: math.Point(620, 90),
@@ -172,8 +146,6 @@ void main() {
     });
 
     test('corners dragged past each other are not usable', () {
-      // Top-right and bottom-right swapped: the outline hourglasses, and the
-      // warp would bake mostly white.
       const bowTie = DocumentQuad(
         topLeft: math.Point(100, 100),
         topRight: math.Point(400, 400),
@@ -184,8 +156,6 @@ void main() {
     });
 
     test('two corners dragged together are not usable', () {
-      // The bottom edge has collapsed to nothing: a thin strip of white came
-      // back the last time this was let through.
       const sliver = DocumentQuad(
         topLeft: math.Point(100, 100),
         topRight: math.Point(400, 100),

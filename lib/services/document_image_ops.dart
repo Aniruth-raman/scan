@@ -1,4 +1,4 @@
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 
 import 'document_detection_worker.dart';
 import 'document_detector.dart';

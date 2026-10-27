@@ -441,3 +441,92 @@ Source: `navervision/mlsd` `tflite_models/M-LSD_512_large_fp16.tflite`, Apache-2
 `flutter analyze` clean, `flutter test` 46/46. Release APK **44,522,435 B** — 28.67 MB under the
 74,580,524 B `document_scan` baseline, back in line with the original ~42 MB budget (the extra
 ~1.8 MB is the larger model).
+
+## ML Kit Document Scanner was tried and rejected (2026-10-27)
+
+The M-LSD detector was briefly replaced by Google's ML Kit Document Scanner
+(`google_mlkit_document_scanner 0.6.1`) and then reverted the same day. Keep this note so the
+decision is not re-litigated: it **does not work on the reference device**.
+
+What happened, in order:
+
+1. `GmsDocumentScannerOptions.setPageLimit` rejects `0` — the first run failed with "page number
+   must be greater than 1". The Flutter plugin always sends `pageLimit`; there is no "unlimited"
+   sentinel (`pageLimit: 500` is valid, ≥ 1).
+2. After fixing that, `GmsDocumentScanning.getClient(...).getStartScanIntent(activity)` throws a
+   deterministic `NullPointerException` at `Objects.requireNonNull` inside Play services' R8-minified
+   code (`am0.<init>` → `gl0.a` → `f8.b` → `dm0.a` → `l20.<init>` → `sa.f` → `q8.run`), every call.
+   It is caught by the app and surfaced as "Could not scan", but the scanner Activity never opens.
+3. The device's Google account was in a `BadAuthentication` state (the scanner's models/UI are
+   "dynamically downloaded by Google Play services"). Re-authenticating the account cleared the
+   `BadAuthentication`, but the NPE persisted — so it is a Beta-scanner incompatibility with this
+   ROM (Samsung M34 / SM-M346B, Android 16, One UI), not an account issue. RAM (7.5 GB) and Play
+   services (26.41.31) both meet the documented requirements.
+
+Conclusion: the ML Kit Document Scanner is a Beta, Play-services-downloaded feature that crashes on
+this device, and it has no per-frame corner API anyway (it replaces the whole capture/crop UI). The
+M-LSD detector (offline, bundled, no account or network dependency) is the reliable choice here.
+
+## M-LSD upgraded to DocAligner, a direct corner-regressor (2026-10-27)
+
+M-LSD detects line segments and the app fits a quad to them; DocAligner regresses the four corners
+directly (heatmap regression), so there is no segment/Hough stage to go wrong. It replaces M-LSD as
+the bundled detector.
+
+**Model.** `lcnet100_h_e_bifpn_256_fp32.onnx` (DocsaidLab DocAligner release 1.1.1, Apache-2.0),
+4,767,987 B. Contract, read from the ONNX graph: input `1×3×256×256` RGB; output `1×4×128×128`, four
+corner heatmaps in clockwise order from the top-left. The app ships it as
+`assets/models/document_corners.tflite` (4,815,124 B fp32).
+
+**Conversion.** onnx2tf 2.6.9 (needs Python 3.12 + the VC++ runtime; see below) turned the ONNX into
+TFLite. The BiFPN weighted-fusion `Einsum` (`i,i...->...`, 20 of them) came out as `ONNX_EINSUM`
+custom ops the TFLite runtime cannot execute. They are mechanically lowered to
+`Reshape → Mul → ReduceSum(axis 0)` (the equation is `sum_i w[i]·feat[i,...]`); the lowered ONNX
+matches the original to **0.0** max abs diff, and the resulting TFLite matches the ONNX to **0.0**.
+onnx2tf's own float16 output is unusable (fp16 *activations*; CONV_2D rejects them), so the fp32
+model is used.
+
+**Preprocessing / postprocessing** (ported from `docaligner/heatmap_reg/infer.py`):
+- resize to 256×256, RGB→float32, `/255` (no mean/std); luma is replicated across R/G/B.
+- resize each 128×128 map to frame size implicitly, threshold at **0.3**, take the largest connected
+  region, and use its value-weighted centroid as the corner; scale to the frame.
+- the 0.3 threshold is also the **no-document** signal: a blank/noise/gradient frame peaks at ≤0.26,
+  so nothing is returned and the caller falls back to the full frame.
+
+**Verification.** On DocAligner's own `docs/run_test_card.jpg` the ported pipeline returns
+`(46.9,223.3) (387.0,198.1) (423.1,345.4) (40.3,361.6)`, matching the published reference
+`(48.15,223.48) (387.13,198.10) (423.04,345.51) (40.15,361.38)` within ~1.3 px. Grayscale vs RGB
+differs by <1 px, which is why the live luma feed is fine.
+
+**On-device.** M34: model loads (`input 1x256x256x3 float32, heatmap 1x128x128x4`), and pointing at an
+open book triggered auto-capture, i.e. the detector returned a usable quad. Release APK
+**46,218,843 B** (+1,680,024 vs the M-LSD build; the model is 1.7 MB larger).
+
+**Toolchain note.** Converting on this machine needed Python 3.12 (only 3.14 was present and
+onnx2tf pins `numpy==2.2.6`, which has no 3.14 wheel) **and** the VC++ runtime (`msvcp140.dll` is
+absent system-wide; `onnx` and `ai_edge_litert` both failed to load until the DLLs were placed beside
+the interpreter).
+
+Also fixed here: in the crop stage, the 63 dp top band's scrim was an opaque `Container` that
+swallowed touches, so when detection fell back to the full frame the quad's top edge could not be
+dragged. The scrim is now `IgnorePointer`; only the back target is hit-testable.
+
+### DocAligner needs a margin — pad the model input (2026-10-27)
+
+Symptom: the crop stage's quad and the actual crop did not match the page. Cause: DocAligner is a
+corner-heatmap model that needs the page to sit **inside** the frame with margin. Measured on the
+real M34 camera frame, a page that fills the frame scored **0.004–0.008** per corner (no detection)
+→ `detectFromRgba` returned null → the crop stage fell back to `DocumentQuad.fullFrame`, so the quad
+(and the crop) were the whole frame instead of the page.
+
+The same frame with an 80 px border added jumps to **0.4–0.9**, and the doc-aligned test card stays
+within 1 px. So the detector now draws a **32 px synthetic border** (near-black, `13/255`) around the
+frame inside the 256×256 input, samples the frame into the inner 192×192 region, and maps the
+heatmap centroids back through the pad (`(h*scale + scale/2 - pad) / (inputSize - 2*pad) * frame`).
+This restores the margin the model expects without cropping the frame, and fixes pages that fill the
+screen (the common case on a phone).
+
+Verified on the M34: a book cover that previously produced no detection now gets a tight quad on the
+cover (corner grips on all four corners), and the crop lands on the page.
+
+`flutter analyze` clean, `flutter test` 47/47. Release APK **46,218,843 B**.

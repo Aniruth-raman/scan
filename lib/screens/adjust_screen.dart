@@ -548,33 +548,36 @@ class _AdjustScreenState extends State<AdjustScreen> {
       right: 0,
       top: 0,
       height: 63,
-      child: Container(
-        color: ScanColor.black30,
-        child: Stack(
-          children: [
-            Positioned(
-              left: 2,
-              top: 15,
-              child: Semantics(
-                button: true,
-                label: 'Back to capture',
-                child: SizedBox(
-                  width: ScanSize.touch,
-                  height: ScanSize.touch,
-                  child: InkResponse(
-                    radius: 24,
-                    onTap: () => Navigator.pop(context),
-                    child: const Icon(
-                      Icons.arrow_back,
-                      size: ScanSize.icon,
-                      color: ScanColor.gray0,
-                    ),
+      child: Stack(
+        children: [
+          // The scrim is visual only. When detection falls back to the full
+          // frame, the quad's top edge sits under this band, and dragging it
+          // still has to reach the stage — so only the back target is hit-testable.
+          Positioned.fill(
+            child: IgnorePointer(child: Container(color: ScanColor.black30)),
+          ),
+          Positioned(
+            left: 2,
+            top: 15,
+            child: Semantics(
+              button: true,
+              label: 'Back to capture',
+              child: SizedBox(
+                width: ScanSize.touch,
+                height: ScanSize.touch,
+                child: InkResponse(
+                  radius: 24,
+                  onTap: () => Navigator.pop(context),
+                  child: const Icon(
+                    Icons.arrow_back,
+                    size: ScanSize.icon,
+                    color: ScanColor.gray0,
                   ),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

@@ -1,7 +1,7 @@
 ?# Scan — build plan
 
-Status: **P0–P9 shipped**; release APK **42,686,787 B**. Nothing pending — see §0 for the state and
-`findings.md` for the evidence behind every measurement.
+Status: **P0–P9 shipped; detector upgraded to DocAligner**; release APK **46,218,843 B**. See §0 for
+the state and `findings.md` for the evidence behind every measurement.
 
 ## 0. Where things stand (read this first)
 

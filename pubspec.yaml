@@ -70,10 +70,10 @@ flutter:
   uses-material-design: true
 
   assets:
-    # M-LSD ("Towards Light-weight and Real-time Line Segment Detection"),
-    # NAVER Corp, Apache-2.0. Licence text ships beside it.
-    - assets/models/document_edges.tflite
-    - assets/models/LICENSE-mlsd.txt
+    # DocAligner (DocsaidLab) document-corner model, Apache-2.0. Converted from
+    # lcnet100_h_e_bifpn_256_fp32.onnx to TFLite; licence text ships beside it.
+    - assets/models/document_corners.tflite
+    - assets/models/LICENSE-docaligner.txt
 
   # To add assets to your application, add an assets section, like this:
   # assets:
