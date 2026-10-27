@@ -5,6 +5,13 @@ A document scanner for Android that does one job: find the page, crop it, save a
 No account, no ads, no "export up to 5 pages". The release build asks for the camera and your
 photos, has **no `INTERNET` permission**, and there is no server anywhere for your scans to go.
 
+<p align="center">
+  <img src="docs/screenshots/capture.jpg" width="182" alt="Capture: the page in the viewfinder, with the mode carousel and the 68 dp shutter">
+  <img src="docs/screenshots/crop.jpg" width="182" alt="Crop: the detected page with four draggable corners">
+  <img src="docs/screenshots/review.jpg" width="182" alt="Review and edit: rotate, filter, add pages, finish">
+  <img src="docs/screenshots/list.jpg" width="182" alt="My Scans: saved pages as tiles">
+</p>
+
 ## Why this exists
 
 Microsoft Lens was the app I reached for whenever I needed to keep something on paper. When its
