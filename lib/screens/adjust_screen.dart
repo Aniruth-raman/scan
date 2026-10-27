@@ -34,9 +34,20 @@ class AdjustScreen extends StatefulWidget {
     required this.originalJpeg,
     this.pages = const <Uint8List>[],
     this.filter = ScanFilter.none,
+    this.normalizedCorners,
+    this.frameSize,
   });
 
   final Uint8List originalJpeg;
+
+  /// The live outline the shutter was pressed with, in 0..1 of [frameSize].
+  ///
+  /// Seeding the crop from it is what makes the corners land where the user saw
+  /// them; detection only runs when this is absent.
+  final List<double>? normalizedCorners;
+
+  /// Size of the preview frame [normalizedCorners] is measured in.
+  final Size? frameSize;
 
   /// Pages already committed to this session, newest last. Shown to the left
   /// of the page being cropped.
@@ -85,7 +96,11 @@ class _AdjustScreenState extends State<AdjustScreen> {
 
   Future<void> _prepare() async {
     try {
-      final preview = await prepareAdjustPreview(widget.originalJpeg);
+      final preview = await prepareAdjustPreview(
+        widget.originalJpeg,
+        normalizedCorners: widget.normalizedCorners,
+        frameSize: widget.frameSize,
+      );
       if (!mounted) return;
       if (preview == null) {
         setState(() {

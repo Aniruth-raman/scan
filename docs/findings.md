@@ -530,3 +530,84 @@ Verified on the M34: a book cover that previously produced no detection now gets
 cover (corner grips on all four corners), and the crop lands on the page.
 
 `flutter analyze` clean, `flutter test` 47/47. Release APK **46,218,843 B**.
+
+Two corrections to the entry above ("What Lens's edge detection actually is"):
+
+1. **The `.ort` file is named in DEX and executed through a JNI wrapper, not "below the Java
+   layer" by an unknown runtime.** `QuadModel.<clinit>` hard-codes
+   `lens/models/mnv2_ep42_wb_quant.ort` as the `TEAMS_MNV2_WB` model path and
+   `com.microsoft.scan.ScanNative.loadDNNModel` loads it. No `libonnxruntime.so` and no ORT Java
+   class ship in the APK, so "ONNX Runtime" is still **not** established — what is established is
+   whose code owns the inference call.
+2. **TFLite is a separate, Java-visible stack** (`com.example.lenstensorflowlitewrapper`,
+   `org.tensorflow.lite.*`, `libtensorflowlite_jni_gms_client.so`, `assets/clf_model.tflite`).
+   It is not the `.ort` path.
+
+### Where `scan` diverges
+
+| | Lens | `scan` |
+|---|---|---|
+| live detector | DNN segmenter + classic line detector, chosen by perf gate; multiple quads | single M-LSD 512, one quad, smoothed by `quad_smoother` |
+| presence gate | 3-class doc classifier + "Not a scan?" nudge | none (null quad only) |
+| crop | GPU perspective filter, output = quad size at source pixels | `Matrix.setPolyToPoly` on CPU, cap `MAX_OUTPUT_EDGE 4096`, white fill |
+| enhancement | native `CleanupImage` on every page + Sauvola/unsharp/tone-curve palette per mode | 3 `ColorMatrix` presets, default **none** |
+| modes | Document / Whiteboard / Business Card / Photo / Auto | Scan / Whiteboard / Business card, where whiteboard = global B&W matrix |
+| JPEG quality | q75 default, per-identity preference | q95 fixed |
+| DPI / EXIF | written into the file | not written (plain `Bitmap.compress`) |
+| PDF | A4 + `PdfQuality` + `ImageDPI` | fixed `A4_WIDTH_PT = 595` for every page, page height from the image aspect |
+| resolution | user picks MP; crop keeps source pixels | `ResolutionPreset.max`, decode capped at 4096 |
+
+### Issues this comparison exposes in `scan` (no code changed yet)
+
+1. **No cleanup on the default path.** Lens runs `CleanupImage` on every page; `scan`'s default
+   filter is `none`, so the saved page is the raw crop. The `enhance` preset is a mild matrix and
+   `blackAndWhite` is a global 1.7× contrast, not Sauvola — under uneven light it clips, where
+   Lens's B&W/Grayscale are local adaptive thresholds.
+2. **`Whiteboard` capture mode lies.** `_CaptureMode.whiteboard` maps to `ScanFilter.blackAndWhite`,
+   so a whiteboard photo is saved as high-contrast greyscale. Lens's whiteboard is a colour-preserving
+   native cleanup.
+3. **PDF page geometry is resolution-blind.** `A4_WIDTH_PT = 595` regardless of pixel width: a
+   900 px page prints at ~109 dpi and a 4000 px page at ~484 dpi, and no DPI is recorded. Lens has
+   `ImageDPI` (150/220/native) and `PdfQuality` for exactly this.
+4. **No EXIF/DPI on saved JPEGs**, so downstream OCR/print tools cannot tell a page's physical size.
+5. **Re-crop is lossy and irreversible.** `review_screen._recrop` passes `_current.bytes` (the already
+   warped, already encoded page) back into `AdjustScreen`, so a second crop can only cut more of the
+   previous crop and costs another q95 generation. Lens keeps `OriginalImageInfo` and re-renders from
+   the capture.
+6. **Review edits add a generation.** Rotate/change-filter goes through `NativeImageKit.transform`,
+   re-encoding q95; Lens applies review filters to the source and encodes once at save.
+7. **Detection input is 480 px while the model wants 512**, so every still is resampled twice
+   (480 → 512) before inference. Lens feeds `requiredImageWidth/Height` exactly into a reused bitmap.
+8. **No resolution control** even though the camera is opened at `ResolutionPreset.max` and then
+   clipped to 4096 — a 50 MP capture silently loses most of its pixels with no way to ask otherwise.
+
+## The outline now seeds the crop (2026-10-28)
+
+The gap: `camera_screen._capture()` never passed `_quad` to `AdjustScreen`, so the crop stage
+re-detected the page from the still. Two different detections then disagreed about the same shot,
+and the corners the user had lined up were not the corners being cropped.
+
+Fix, in the pipeline's own terms:
+
+| stage | before | now |
+|---|---|---|
+| shutter | `_quad` dropped | `_quad` + `_frameDisplaySize` read before the stream is paused |
+| handoff | `AdjustScreen(originalJpeg)` only | `normalizedCorners` (0..1 of the analysed frame) + `frameSize` |
+| crop seed | always re-detected | outline mapped onto the capture; detection only when there is no outline |
+
+The mapping (`cornersFromOutline`) inverts the same `BoxFit.cover` geometry the outline is painted
+with, so a preview/still aspect difference offsets the corners instead of stretching them. Tests
+cover equal aspect, 4:3 preview against a 16:9 capture, malformed input, and clamping.
+
+Verified on the M34 by driving the real flow over adb:
+
+1. My Scans -> camera: live quad drawn, "Document found".
+2. Shutter -> crop screen opens with the quad on the same page corners.
+3. Adjust -> Review and Edit -> Options (title, Save as Image/PDF) -> Finish.
+4. `Pictures/Scan/Scan Oct 28, 2026 12_26 AM.jpg` (275,597 B) and
+   `Download/Scan/Scan Oct 28, 2026 12_26 AM.pdf` (276,168 B).
+5. PDF geometry: `/MediaBox [0 0 365 367]` for a `1519 x 1526` page, i.e. `1519 * 72 / 300` —
+   the S8 DPI sizing is live.
+
+Note: Auto Capture was on, so one steady scene produced an automatic shot plus the manual one.
+That is the feature working, and it is why the first test session held two pages.
