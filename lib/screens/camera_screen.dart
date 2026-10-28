@@ -31,7 +31,10 @@ class CameraScreen extends StatefulWidget {
 
 /// Capture modes. Each maps onto a tone preset rather than a fake label.
 enum _CaptureMode {
-  scan('SCAN', 'Scan', ScanFilter.none),
+  // Lens runs its cleanup on every captured page instead of offering a
+  // "none" default, so Scan tones the page as it is cropped. Filters in the
+  // review stage still let the user go back to the untouched capture.
+  scan('SCAN', 'Scan', ScanFilter.enhance),
   whiteboard('WHITEBOARD', 'Whiteboard', ScanFilter.blackAndWhite),
   businessCard('BUSINESS CARD', 'Business card', ScanFilter.enhance);
 
@@ -286,9 +289,8 @@ class _CameraScreenState extends State<CameraScreen> {
       if (!mounted) return;
       await HapticFeedback.mediumImpact();
       if (!mounted) return;
-      final outline = (shotQuad == null ||
-              shotFrame.width <= 0 ||
-              shotFrame.height <= 0)
+      final outline =
+          (shotQuad == null || shotFrame.width <= 0 || shotFrame.height <= 0)
           ? null
           : <double>[
               shotQuad.topLeft.x / shotFrame.width,

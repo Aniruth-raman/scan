@@ -402,6 +402,8 @@ class ScanImageKit(private val context: Context) : MethodChannel.MethodCallHandl
             // Crop regions can leave uncovered pixels at the border.
             canvas.drawColor(Color.WHITE)
             canvas.drawBitmap(src, inverse, paint)
+            // The automatic tone is a per-page pass, not a colour matrix.
+            if (filterId == FILTER_ENHANCE) applyCleanup(out, whiteboard = false)
 
             val encoded = encode(out, quality)
             val result = mapOf(
@@ -444,7 +446,11 @@ class ScanImageKit(private val context: Context) : MethodChannel.MethodCallHandl
                 page = rotated
             }
             val tone = filterFor(filterId)
-            if (tone != null) {
+            if (filterId == FILTER_ENHANCE) {
+                // Same pass the crop stage bakes, so "Enhance" here means the
+                // adaptive cleanup rather than a stronger version of it.
+                applyCleanup(page, whiteboard = false)
+            } else if (tone != null) {
                 val tinted = Bitmap.createBitmap(
                     page.width, page.height, Bitmap.Config.ARGB_8888
                 )
@@ -817,20 +823,6 @@ class ScanImageKit(private val context: Context) : MethodChannel.MethodCallHandl
      * are a single 4x5 colour matrix, which the GPU applies for free.
      */
     private fun filterFor(id: Int): ColorMatrixColorFilter? = when (id) {
-        1 -> { // enhance: gentle contrast + saturation lift
-            val matrix = ColorMatrix()
-            matrix.setSaturation(1.18f)
-            val contrast = ColorMatrix(
-                floatArrayOf(
-                    1.12f, 0f, 0f, 0f, -15f,
-                    0f, 1.12f, 0f, 0f, -15f,
-                    0f, 0f, 1.12f, 0f, -15f,
-                    0f, 0f, 0f, 1f, 0f
-                )
-            )
-            matrix.postConcat(contrast)
-            ColorMatrixColorFilter(matrix)
-        }
         2 -> { // greyscale
             val matrix = ColorMatrix()
             matrix.setSaturation(0f)
@@ -853,6 +845,96 @@ class ScanImageKit(private val context: Context) : MethodChannel.MethodCallHandl
         else -> null
     }
 
+    /**
+     * SUBSTITUTE for Lens's `CleanupImage(Document | Whiteboard)`.
+     *
+     * That stage is opaque native code inside `libpixsdk`/`libOfficeLens.so`: only
+     * its effect is visible, the algorithm is not. This is a grey-world white
+     * balance plus a percentile contrast stretch, which reproduces the visible
+     * direction (neutral paper, readable text) without claiming to be the original.
+     * It runs on the cropped page, once, at the resolution the page will be saved
+     * at; a whole page is one pass, so it stays well inside the capture budget.
+     */
+    private fun applyCleanup(bitmap: Bitmap, whiteboard: Boolean) {
+        val w = bitmap.width
+        val h = bitmap.height
+        if (w == 0 || h == 0) return
+
+        val histogram = IntArray(256)
+        var sumR = 0L
+        var sumG = 0L
+        var sumB = 0L
+        val row = IntArray(w)
+        for (y in 0 until h) {
+            bitmap.getPixels(row, 0, w, 0, y, w, 1)
+            for (x in 0 until w) {
+                val p = row[x]
+                val r = p shr 16 and 0xFF
+                val g = p shr 8 and 0xFF
+                val b = p and 0xFF
+                sumR += r
+                sumG += g
+                sumB += b
+                histogram[(299 * r + 587 * g + 114 * b) / 1000]++
+            }
+        }
+
+        val total = (w.toLong() * h).toDouble()
+        val meanR = sumR / total
+        val meanG = sumG / total
+        val meanB = sumB / total
+        val mean = (meanR + meanG + meanB) / 3.0
+        fun gain(channel: Double): Float =
+            (mean / channel.coerceAtLeast(1.0)).toFloat().coerceIn(0.85f, 1.20f)
+
+        // Whiteboards keep more of the top range so the board stays white.
+        val lowPct = if (whiteboard) 0.002 else 0.02
+        val highPct = if (whiteboard) 0.995 else 0.98
+        var acc = 0L
+        var low = 0
+        var high = 255
+        val lowTarget = (total * lowPct).toLong()
+        val highTarget = (total * highPct).toLong()
+        for (v in 0..255) {
+            acc += histogram[v]
+            if (acc <= lowTarget) low = v
+            if (acc <= highTarget) high = v
+        }
+        if (high - low < 16) {
+            low = 0
+            high = 255
+        }
+
+        val span = (high - low).toFloat().coerceAtLeast(1f)
+        val gamma = if (whiteboard) 1.08f else 1.02f
+        val lut = IntArray(256) { v ->
+            val stretched = ((v - low) / span).coerceIn(0f, 1f)
+            (Math.pow(stretched.toDouble(), gamma.toDouble()) * 255.0)
+                .roundToInt()
+                .coerceIn(0, 255)
+        }
+        val gainR = gain(meanR)
+        val gainG = gain(meanG)
+        val gainB = gain(meanB)
+
+        // Per-channel gains fold into the same table to stay a single pass.
+        val lutR = IntArray(256) { lut[(it * gainR).roundToInt().coerceIn(0, 255)] }
+        val lutG = IntArray(256) { lut[(it * gainG).roundToInt().coerceIn(0, 255)] }
+        val lutB = IntArray(256) { lut[(it * gainB).roundToInt().coerceIn(0, 255)] }
+
+        for (y in 0 until h) {
+            bitmap.getPixels(row, 0, w, 0, y, w, 1)
+            for (x in 0 until w) {
+                val p = row[x]
+                row[x] = (p and 0xFF000000.toInt()) or
+                    (lutR[p shr 16 and 0xFF] shl 16) or
+                    (lutG[p shr 8 and 0xFF] shl 8) or
+                    lutB[p and 0xFF]
+            }
+            bitmap.setPixels(row, 0, w, 0, y, w, 1)
+        }
+    }
+
     companion object {
         /** Bound on decode allocation; a 12 MP frame stays at full size here. */
         const val MAX_DECODE_EDGE = 4096
@@ -867,6 +949,9 @@ class ScanImageKit(private val context: Context) : MethodChannel.MethodCallHandl
 
         /** Long edge of the preview published for an indexed image. */
         const val THUMB_EDGE = 240
+
+        /** Tone id for the automatic cleanup. Matches `ScanFilter.enhance`. */
+        const val FILTER_ENHANCE = 1
 
         /** Must match the FileProvider authority declared in AndroidManifest.xml. */
         const val FILE_PROVIDER_SUFFIX = ".scanfileprovider"
