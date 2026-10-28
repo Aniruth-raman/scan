@@ -38,7 +38,8 @@ dependencies:
   permission_handler: ^13.0.2
   intl: ^0.20.3
   path: ^1.9.1
-  # Runs the bundled M-LSD document-edge model (assets/models/document_edges.tflite).
+  # Runs the bundled DocAligner corner-heatmap model
+  # (assets/models/document_corners.tflite).
   # FFI binding to LiteRT; no Java surface, safe to call from our detection isolate.
   tflite_flutter: ^0.12.1
 

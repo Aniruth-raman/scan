@@ -47,9 +47,9 @@ class RenderedPage {
 /// When [normalizedCorners] is given - the live outline the user saw, in 0..1 of
 /// the preview frame - those are the starting corners, mapped onto the capture's
 /// own resolution. That is what makes the crop begin exactly where the outline
-/// was, instead of at a fresh detection that may disagree with it. Detection is
-/// the fallback, and is also used when the preview and the capture disagree about
-/// aspect ratio, because then the outline cannot be mapped by proportion alone.
+/// was: the crop stage never runs its own detection while an outline exists, so
+/// the corners on screen and the corners being cropped cannot disagree.
+/// Detection is only the fallback for a capture taken with no outline at all.
 Future<AdjustPreview?> prepareAdjustPreview(
   Uint8List jpeg, {
   List<double>? normalizedCorners,
