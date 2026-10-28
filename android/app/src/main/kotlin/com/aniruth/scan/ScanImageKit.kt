@@ -39,7 +39,7 @@ import kotlin.math.sqrt
  *  - decode + EXIF orientation  -> BitmapFactory + ExifInterface
  *  - perspective rectification  -> Matrix.setPolyToPoly + Canvas.drawBitmap
  *  - quarter-turn rotation      -> Bitmap.createBitmap(Matrix)
- *  - tone presets               -> ColorMatrixColorFilter
+ *  - quarter-turn rotation      -> Bitmap.createBitmap
  *  - encode                     -> Bitmap.compress (one generation, no Dart round trip)
  *  - multi-page PDF             -> JPEG DCTDecode XObjects, hand-written xref
  *  - thumbnails                 -> BitmapFactory inSampleSize (never decodes full size)
@@ -56,8 +56,6 @@ class ScanImageKit(private val context: Context) : MethodChannel.MethodCallHandl
         executor.execute {
             try {
                 val value: Any? = when (call.method) {
-                    "analyze" -> analyze(call)
-                    "warp" -> warp(call)
                     "transform" -> transform(call)
                     "thumbnail" -> thumbnail(call)
                     "publishImage" -> publishImage(call)
@@ -311,151 +309,20 @@ class ScanImageKit(private val context: Context) : MethodChannel.MethodCallHandl
         return deleted
     }
 
-    // ------------------------------------------------------------- analyze --
-
-    /**
-     * One decode of the capture produces both the on-screen preview and the
-     * small RGBA buffer the Dart detector scans. The detector therefore never
-     * touches a multi-megabyte JPEG.
-     */
-    private fun analyze(call: MethodCall): Map<String, Any> {
-        val bytes = call.argument<ByteArray>("bytes")
-            ?: throw IllegalArgumentException("bytes required")
-        val previewEdge = call.argument<Int>("previewEdge") ?: 1440
-        val detectEdge = call.argument<Int>("detectEdge") ?: 480
-
-        val full = decodeOriented(bytes, MAX_DECODE_EDGE)
-        try {
-            val preview = scaled(full, previewEdge)
-            val detect = scaled(full, detectEdge)
-
-            val pixels = IntArray(detect.width * detect.height)
-            detect.getPixels(pixels, 0, detect.width, 0, 0, detect.width, detect.height)
-            val rgba = ByteArray(pixels.size * 4)
-            for (i in pixels.indices) {
-                val p = pixels[i]
-                val o = i * 4
-                rgba[o] = (p shr 16 and 0xFF).toByte()
-                rgba[o + 1] = (p shr 8 and 0xFF).toByte()
-                rgba[o + 2] = (p and 0xFF).toByte()
-                rgba[o + 3] = (p ushr 24 and 0xFF).toByte()
-            }
-
-            return mapOf(
-                "preview" to encode(preview, 90),
-                "previewWidth" to preview.width,
-                "previewHeight" to preview.height,
-                "fullWidth" to full.width,
-                "fullHeight" to full.height,
-                "rgba" to rgba,
-                "detectWidth" to detect.width,
-                "detectHeight" to detect.height
-            )
-        } finally {
-            full.recycle()
-        }
-    }
-
-    // ---------------------------------------------------------------- warp --
-
-    /**
-     * Rectifies the quad at full capture resolution.
-     *
-     * The output size comes from the quad's own edge lengths, so a page cropped
-     * from the middle of a 12 MP frame keeps the pixels it actually had instead
-     * of being resampled to a fixed bound. It is never upscaled past the source.
-     */
-    private fun warp(call: MethodCall): Map<String, Any> {
-        val bytes = call.argument<ByteArray>("bytes")
-            ?: throw IllegalArgumentException("bytes required")
-        val corners = call.argument<List<Double>>("corners")
-            ?: throw IllegalArgumentException("corners required")
-        if (corners.size != 8) throw IllegalArgumentException("corners must be 8 values")
-        val filterId = call.argument<Int>("filter") ?: 0
-        val quality = call.argument<Int>("quality") ?: 95
-
-        val src = decodeOriented(bytes, MAX_DECODE_EDGE)
-        try {
-            // Corners arrive in full-resolution oriented coordinates.
-            val sx = src.width.toDouble()
-            val sy = src.height.toDouble()
-            val x = DoubleArray(4) { corners[it * 2] * sx / fullWidthOf(call, src.width) }
-            val y = DoubleArray(4) { corners[it * 2 + 1] * sy / fullHeightOf(call, src.height) }
-
-            fun dist(a: Int, b: Int): Double =
-                sqrt((x[a] - x[b]) * (x[a] - x[b]) + (y[a] - y[b]) * (y[a] - y[b]))
-
-            val outW = min(
-                src.width,
-                max(dist(0, 1), dist(3, 2)).roundToInt()
-            ).coerceIn(16, MAX_OUTPUT_EDGE)
-            val outH = min(
-                src.height,
-                max(dist(0, 3), dist(1, 2)).roundToInt()
-            ).coerceIn(16, MAX_OUTPUT_EDGE)
-
-            val srcPts = floatArrayOf(
-                x[0].toFloat(), y[0].toFloat(),
-                x[1].toFloat(), y[1].toFloat(),
-                x[2].toFloat(), y[2].toFloat(),
-                x[3].toFloat(), y[3].toFloat()
-            )
-            val dstPts = floatArrayOf(
-                0f, 0f,
-                (outW - 1).toFloat(), 0f,
-                (outW - 1).toFloat(), (outH - 1).toFloat(),
-                0f, (outH - 1).toFloat()
-            )
-
-            // setPolyToPoly gives dst -> src; the canvas needs src -> dst.
-            val inverse = Matrix()
-            val forward = Matrix()
-            if (!forward.setPolyToPoly(dstPts, 0, srcPts, 0, 4)) {
-                throw IllegalStateException("degenerate quad")
-            }
-            if (!forward.invert(inverse)) {
-                throw IllegalStateException("quad is not invertible")
-            }
-
-            val out = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(out)
-            val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
-            // Crop regions can leave uncovered pixels at the border.
-            canvas.drawColor(Color.WHITE)
-            canvas.drawBitmap(src, inverse, paint)
-
-            // The tone stage runs on the rectified page, so an adaptive filter
-            // sees the page's own statistics rather than the camera frame's.
-            render(out, filterId)
-
-            val encoded = encode(out, quality)
-            val result = mapOf(
-                "bytes" to encoded,
-                "width" to out.width,
-                "height" to out.height
-            )
-            out.recycle()
-            return result
-        } finally {
-            src.recycle()
-        }
-    }
-
     // ----------------------------------------------------------- transform --
 
     /**
-     * Bakes the review stage's edits: a clockwise quarter-turn rotation and a
-     * tone preset, in one decode and one encode.
+     * Bakes the review stage's edit: a clockwise quarter-turn rotation, in one
+     * decode and one encode.
      *
-     * The page is a finished JPEG, so there is nothing to rectify here — only
-     * `Bitmap.createBitmap(Matrix)` for the turn and `ColorMatrixColorFilter`
-     * for the tone, both of which the graphics stack already provides.
+     * Tones are not applied here. Google's scanner offers its own filters and
+     * shadow removal before pages reach us, so re-tinting them would be a second
+     * pass over pixels that are already final.
      */
     private fun transform(call: MethodCall): Map<String, Any> {
         val bytes = call.argument<ByteArray>("bytes")
             ?: throw IllegalArgumentException("bytes required")
         val turns = ((call.argument<Int>("quarterTurns") ?: 0) % 4 + 4) % 4
-        val filterId = call.argument<Int>("filter") ?: 0
         val quality = call.argument<Int>("quality") ?: 95
 
         var page = decodeOriented(bytes, MAX_DECODE_EDGE)
@@ -468,7 +335,6 @@ class ScanImageKit(private val context: Context) : MethodChannel.MethodCallHandl
                 if (rotated !== page) page.recycle()
                 page = rotated
             }
-            render(page, filterId)
             return mapOf(
                 "bytes" to encode(page, quality),
                 "width" to page.width,
@@ -853,273 +719,6 @@ class ScanImageKit(private val context: Context) : MethodChannel.MethodCallHandl
         return out.toByteArray()
     }
 
-    // ------------------------------------------------------------- render --
-    //
-    // The tone stage, reproducing Lens's `ProcessMode.Scan` palette. Lens runs the
-    // equivalent work on the GPU (gpuimage, Apache-2.0); this is the same maths on
-    // one bitmap so no second library is needed. The two modes whose Lens
-    // implementation is opaque native code (`CleanupImage`) are marked SUBSTITUTE
-    // and will be replaced without changing the surrounding pipeline.
-
-    private fun render(bitmap: Bitmap, filterId: Int) {
-        when (filterId) {
-            FILTER_DOCUMENT -> applyCleanup(bitmap, whiteboard = false) // SUBSTITUTE
-            FILTER_WHITEBOARD -> applyCleanup(bitmap, whiteboard = true) // SUBSTITUTE
-            FILTER_BLACK_AND_WHITE -> applySauvola(bitmap, keepColour = false)
-            FILTER_GRAYSCALE -> applyGrayscale(bitmap)
-            FILTER_SAUVOLA_COLOUR -> applySauvola(bitmap, keepColour = true)
-            FILTER_SBC_ADJUST -> applyBrightnessContrast(bitmap)
-        }
-    }
-
-    /** Rec. 601 luma, the weights Lens's shaders use (0.299/0.587/0.114). */
-    private fun luma(pixel: Int): Int {
-        val r = pixel shr 16 and 0xFF
-        val g = pixel shr 8 and 0xFF
-        val b = pixel and 0xFF
-        return (299 * r + 587 * g + 114 * b) / 1000
-    }
-
-    private fun applyGrayscale(bitmap: Bitmap) {
-        val w = bitmap.width
-        val row = IntArray(w)
-        for (y in 0 until bitmap.height) {
-            bitmap.getPixels(row, 0, w, 0, y, w, 1)
-            for (x in 0 until w) {
-                val p = row[x]
-                val v = luma(p)
-                row[x] = (p and 0xFF000000.toInt()) or (v shl 16) or (v shl 8) or v
-            }
-            bitmap.setPixels(row, 0, w, 0, y, w, 1)
-        }
-    }
-
-    /**
-     * Believed-equivalent "Brighten": a point brightness/contrast lift.
-     *
-     * Lens exposes this as `SBCAdjust` through a colour-control shader whose
-     * uniform values are set at runtime and were not recovered. The shape is
-     * inferred; the strength is ours.
-     */
-    private fun applyBrightnessContrast(bitmap: Bitmap) {
-        val w = bitmap.width
-        val row = IntArray(w)
-        val brightness = 8
-        val contrast = 1.06f
-        val lut = IntArray(256) { v ->
-            (((v - 128) * contrast) + 128 + brightness).roundToInt().coerceIn(0, 255)
-        }
-        for (y in 0 until bitmap.height) {
-            bitmap.getPixels(row, 0, w, 0, y, w, 1)
-            for (x in 0 until w) {
-                val p = row[x]
-                row[x] = (p and 0xFF000000.toInt()) or
-                    (lut[p shr 16 and 0xFF] shl 16) or
-                    (lut[p shr 8 and 0xFF] shl 8) or
-                    lut[p and 0xFF]
-            }
-            bitmap.setPixels(row, 0, w, 0, y, w, 1)
-        }
-    }
-
-    /**
-     * Sauvola adaptive threshold, exactly as Lens's shipped shader pair does it.
-     *
-     * Recovered from `classes5.dex`: a two-axis box of `n = 41` samples spanning
-     * `5 / (n * 100)` of the frame per step (4.88 % per axis), `k = 0.2`,
-     * `R = 0.5`, and a `darkenFactor = 0.5` floor - so "below threshold" is a
-     * half-grey plate, not black.
-     *
-     * `threshold = mean * (1 + k * ((s / R) - 1))`, `s = sqrt(|E[x^2] - E[x]^2|)`.
-     */
-    private fun applySauvola(bitmap: Bitmap, keepColour: Boolean) {
-        val w = bitmap.width
-        val h = bitmap.height
-        if (w == 0 || h == 0) return
-
-        val radiusX = max(1, (SAUVOLA_SPAN * w).roundToInt())
-        val radiusY = max(1, (SAUVOLA_SPAN * h).roundToInt())
-
-        // Luma plane once: the box sums read it repeatedly, the bitmap does not.
-        val plane = ByteArray(w * h)
-        val row = IntArray(w)
-        for (y in 0 until h) {
-            bitmap.getPixels(row, 0, w, 0, y, w, 1)
-            val base = y * w
-            for (x in 0 until w) plane[base + x] = luma(row[x]).toByte()
-        }
-
-        val colSum = LongArray(w)
-        val colSqSum = LongArray(w)
-        var top = 0
-        var bottom = min(h - 1, radiusY)
-
-        fun addRow(y: Int, sign: Int) {
-            val base = y * w
-            for (x in 0 until w) {
-                val v = plane[base + x].toLong() and 0xFF
-                colSum[x] += sign * v
-                colSqSum[x] += sign * v * v
-            }
-        }
-
-        for (y in 0..bottom) addRow(y, 1)
-
-        val out = IntArray(w)
-        for (y in 0 until h) {
-            bitmap.getPixels(out, 0, w, 0, y, w, 1)
-
-            // Horizontal box over the vertical sums, clamped at the edges.
-            var sum = 0L
-            var sqSum = 0L
-            var count = 0L
-            for (x in 0..min(w - 1, radiusX)) {
-                sum += colSum[x]
-                sqSum += colSqSum[x]
-                count += bottom - top + 1
-            }
-            var windowPixels = count
-
-            for (x in 0 until w) {
-                val mean = sum.toDouble() / windowPixels
-                val meanSq = sqSum.toDouble() / windowPixels
-                val s = sqrt(abs(meanSq - mean * mean))
-                val threshold = mean * (1.0 + SAUVOLA_K * ((s / SAUVOLA_R) - 1.0))
-
-                val p = out[x]
-                val v = plane[y * w + x].toInt() and 0xFF
-                out[x] = if (v >= threshold) {
-                    (p and 0xFF000000.toInt()) or 0x00FFFFFF
-                } else if (keepColour) {
-                    (p and 0xFF000000.toInt()) or
-                        ((p shr 16 and 0xFF) shr 1 shl 16) or
-                        ((p shr 8 and 0xFF) shr 1 shl 8) or
-                        ((p and 0xFF) shr 1)
-                } else {
-                    val grey = (v * SAUVOLA_DARKEN).toInt().coerceIn(0, 255)
-                    (p and 0xFF000000.toInt()) or (grey shl 16) or (grey shl 8) or grey
-                }
-
-                // Slide the horizontal window: drop x - radiusX, add x + radiusX + 1.
-                val drop = x - radiusX
-                if (drop >= 0) {
-                    sum -= colSum[drop]
-                    sqSum -= colSqSum[drop]
-                    windowPixels -= bottom - top + 1
-                }
-                val add = x + radiusX + 1
-                if (add < w) {
-                    sum += colSum[add]
-                    sqSum += colSqSum[add]
-                    windowPixels += bottom - top + 1
-                }
-            }
-            bitmap.setPixels(out, 0, w, 0, y, w, 1)
-
-            // Slide the vertical window.
-            if (y + 1 < h) {
-                val newBottom = min(h - 1, y + 1 + radiusY)
-                if (newBottom > bottom) {
-                    bottom = newBottom
-                    addRow(bottom, 1)
-                }
-                if (top < y + 1 - radiusY) {
-                    addRow(top, -1)
-                    top++
-                }
-            }
-        }
-    }
-
-    /**
-     * SUBSTITUTE for Lens's `CleanupImage(Document | Whiteboard)`.
-     *
-     * That stage is opaque native code inside `libpixsdk`/`libOfficeLens.so`: only
-     * its effect is visible, the algorithm is not. This is a grey-world white
-     * balance plus a percentile contrast stretch, which reproduces the visible
-     * direction (neutral paper, readable text) without claiming to be the original.
-     * Replace this function alone when an open implementation is chosen.
-     */
-    private fun applyCleanup(bitmap: Bitmap, whiteboard: Boolean) {
-        val w = bitmap.width
-        val h = bitmap.height
-        if (w == 0 || h == 0) return
-
-        val histogram = IntArray(256)
-        var sumR = 0L
-        var sumG = 0L
-        var sumB = 0L
-        val row = IntArray(w)
-        for (y in 0 until h) {
-            bitmap.getPixels(row, 0, w, 0, y, w, 1)
-            for (x in 0 until w) {
-                val p = row[x]
-                val r = p shr 16 and 0xFF
-                val g = p shr 8 and 0xFF
-                val b = p and 0xFF
-                sumR += r
-                sumG += g
-                sumB += b
-                histogram[(299 * r + 587 * g + 114 * b) / 1000]++
-            }
-        }
-
-        val total = (w.toLong() * h).toDouble()
-        val meanR = sumR / total
-        val meanG = sumG / total
-        val meanB = sumB / total
-        val mean = (meanR + meanG + meanB) / 3.0
-        fun gain(channel: Double): Float =
-            (mean / channel.coerceAtLeast(1.0)).toFloat().coerceIn(0.85f, 1.20f)
-
-        // Whiteboards keep more of the top range so the board stays white.
-        val lowPct = if (whiteboard) 0.002 else 0.02
-        val highPct = if (whiteboard) 0.995 else 0.98
-        var acc = 0L
-        var low = 0
-        var high = 255
-        val lowTarget = (total * lowPct).toLong()
-        val highTarget = (total * highPct).toLong()
-        for (v in 0..255) {
-            acc += histogram[v]
-            if (acc <= lowTarget) low = v
-            if (acc <= highTarget) high = v
-        }
-        if (high - low < 16) {
-            low = 0
-            high = 255
-        }
-
-        val span = (high - low).toFloat().coerceAtLeast(1f)
-        val gamma = if (whiteboard) 1.08f else 1.02f
-        val lut = IntArray(256) { v ->
-            val stretched = ((v - low) / span).coerceIn(0f, 1f)
-            (Math.pow(stretched.toDouble(), gamma.toDouble()) * 255.0)
-                .roundToInt()
-                .coerceIn(0, 255)
-        }
-        val gainR = gain(meanR)
-        val gainG = gain(meanG)
-        val gainB = gain(meanB)
-
-        // Per-channel gains fold into the same table to stay a single pass.
-        val lutR = IntArray(256) { lut[(it * gainR).roundToInt().coerceIn(0, 255)] }
-        val lutG = IntArray(256) { lut[(it * gainG).roundToInt().coerceIn(0, 255)] }
-        val lutB = IntArray(256) { lut[(it * gainB).roundToInt().coerceIn(0, 255)] }
-
-        for (y in 0 until h) {
-            bitmap.getPixels(row, 0, w, 0, y, w, 1)
-            for (x in 0 until w) {
-                val p = row[x]
-                row[x] = (p and 0xFF000000.toInt()) or
-                    (lutR[p shr 16 and 0xFF] shl 16) or
-                    (lutG[p shr 8 and 0xFF] shl 8) or
-                    lutB[p and 0xFF]
-            }
-            bitmap.setPixels(row, 0, w, 0, y, w, 1)
-        }
-    }
-
     companion object {
         /** Bound on decode allocation; a 12 MP frame stays at full size here. */
         const val MAX_DECODE_EDGE = 4096
@@ -1134,25 +733,6 @@ class ScanImageKit(private val context: Context) : MethodChannel.MethodCallHandl
 
         /** Long edge of the preview published for an indexed image. */
         const val THUMB_EDGE = 240
-
-        // Tone-stage ids. These mirror Lens's `ProcessMode.Scan` palette and are
-        // part of the channel contract, so they must match `ScanFilter` in Dart.
-        const val FILTER_DOCUMENT = 1
-        const val FILTER_WHITEBOARD = 2
-        const val FILTER_BLACK_AND_WHITE = 3
-        const val FILTER_GRAYSCALE = 4
-        const val FILTER_SAUVOLA_COLOUR = 5
-        const val FILTER_SBC_ADJUST = 6
-
-        /**
-         * Sauvola constants, read from Lens's shipped shader text
-         * (`classes5.dex`): `n = 41` samples over `5 / (n * 100)` of the frame
-         * per step, so the window radius is half of 4.88 % of the axis.
-         */
-        const val SAUVOLA_SPAN = 0.0244f
-        const val SAUVOLA_K = 0.2
-        const val SAUVOLA_R = 0.5
-        const val SAUVOLA_DARKEN = 0.5f
 
         /** Must match the FileProvider authority declared in AndroidManifest.xml. */
         const val FILE_PROVIDER_SUFFIX = ".scanfileprovider"

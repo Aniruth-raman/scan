@@ -20,18 +20,4 @@ void main() {
       expect(id, inInclusiveRange(0, 6));
     }
   });
-
-  test('every mode has a preview matrix', () {
-    for (final filter in ScanFilter.values) {
-      expect(colorMatrixFor(filter), hasLength(20), reason: filter.label);
-    }
-  });
-
-  test('identity is the only mode that leaves pixels alone', () {
-    const identity = <double>[1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0];
-    expect(colorMatrixFor(ScanFilter.none), identity);
-    for (final filter in ScanFilter.values.where((f) => f != ScanFilter.none)) {
-      expect(colorMatrixFor(filter), isNot(identity), reason: filter.label);
-    }
-  });
 }

@@ -147,7 +147,6 @@ void main() {
 
     expect(find.text('Options'), findsOneWidget);
     expect(find.text('Finish'), findsOneWidget);
-    expect(find.text('Filters'), findsOneWidget);
     expect(find.text('Reorder'), findsOneWidget);
     expect(find.text('Add'), findsOneWidget);
     // The tray is icon-only in the editor; its labels are semantics.
@@ -182,10 +181,9 @@ void main() {
     expect(tray.height, closeTo(144, 0.5));
     expect(tray.right, closeTo(384 - 12, 0.5));
 
-    // Three 120 dp cells: the labels sit on the cell centres.
-    expect(tester.getCenter(find.text('Filters')).dx, closeTo(72, 1));
-    expect(tester.getCenter(find.text('Reorder')).dx, closeTo(192, 1));
-    expect(tester.getCenter(find.text('Add')).dx, closeTo(312, 1));
+    // Two equal cells across the 360 dp row: each label sits on its centre.
+    expect(tester.getCenter(find.text('Reorder')).dx, closeTo(102, 1));
+    expect(tester.getCenter(find.text('Add')).dx, closeTo(282, 1));
 
     // 48 dp top bar with the back glyph on its centre line.
     expect(tester.getCenter(find.byIcon(Icons.arrow_back)).dy, closeTo(24, 1));
@@ -316,10 +314,6 @@ void main() {
       await pumpReview(tester, <Uint8List>[fakeJpeg()]);
 
       await tester.tap(find.byIcon(Icons.rotate_right));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Filters'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Grayscale'));
       await tester.pumpAndSettle();
 
       // Editing is state only: nothing is re-encoded until the page is saved.

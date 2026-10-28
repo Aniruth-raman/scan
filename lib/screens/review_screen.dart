@@ -14,10 +14,9 @@ import '../services/scan_exporter.dart';
 /// switching a tone re-renders from the original instead of stacking JPEG
 /// generations. [NativeImageKit.transform] bakes them once, at save time.
 class _Page {
-  _Page(this.bytes, {this.filter = ScanFilter.none, this.turns = 0});
+  _Page(this.bytes, {this.turns = 0});
 
   Uint8List bytes;
-  ScanFilter filter;
   int turns;
 }
 
@@ -88,13 +87,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final baked = <Uint8List>[];
     for (final page in _pages) {
       baked.add(
-        page.filter == ScanFilter.none && page.turns == 0
+        page.turns == 0
             ? page.bytes
-            : await NativeImageKit.transform(
-                page.bytes,
-                quarterTurns: page.turns,
-                filter: page.filter,
-              ),
+            : await NativeImageKit.transform(page.bytes, quarterTurns: page.turns),
       );
     }
     return baked;
@@ -229,19 +224,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
     if (name == null || name.isEmpty) return null;
     _title = name;
     return name;
-  }
-
-  Future<void> _pickFilter() async {
-    final chosen = await _openSheet<ScanFilter>(
-      (sheetContext, controller) =>
-          _FilterSheet(scrollController: controller, selected: _current.filter),
-      // All four presets visible without dragging: a chooser that hides half
-      // its options is worse than a taller sheet.
-      peek: 240,
-    );
-    if (chosen == null || !mounted) return;
-    HapticFeedback.selectionClick();
-    setState(() => _current.filter = chosen);
   }
 
   Future<void> _reorder() async {
@@ -453,16 +435,13 @@ class _ReviewScreenState extends State<ReviewScreen> {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: ScanSpace.md),
             child: Center(
-              child: ColorFiltered(
-                colorFilter: ColorFilter.matrix(colorMatrixFor(page.filter)),
-                child: RotatedBox(
-                  quarterTurns: page.turns,
-                  child: Image.memory(
-                    page.bytes,
-                    fit: BoxFit.contain,
-                    gaplessPlayback: true,
-                    filterQuality: FilterQuality.medium,
-                  ),
+              child: RotatedBox(
+                quarterTurns: page.turns,
+                child: Image.memory(
+                  page.bytes,
+                  fit: BoxFit.contain,
+                  gaplessPlayback: true,
+                  filterQuality: FilterQuality.medium,
                 ),
               ),
             ),
@@ -523,11 +502,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
             height: ScanSize.actionRow,
             child: Row(
               children: [
-                _ActionCell(
-                  icon: Icons.filter_vintage_outlined,
-                  label: 'Filters',
-                  onTap: _busy ? null : _pickFilter,
-                ),
                 _ActionCell(
                   icon: Icons.swap_horiz,
                   label: 'Reorder',
@@ -897,70 +871,6 @@ class _CheckRow extends StatelessWidget {
 
 /// Tone presets for the current page. Tapping one bakes the tone preview shown
 /// on the pager; nothing is re-encoded until the session is saved.
-class _FilterSheet extends StatelessWidget {
-  const _FilterSheet({required this.scrollController, required this.selected});
-
-  final ScrollController scrollController;
-  final ScanFilter selected;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      controller: scrollController,
-      padding: EdgeInsets.zero,
-      children: [
-        const _SheetHandle(),
-        const Padding(
-          padding: EdgeInsets.fromLTRB(
-            ScanSpace.md,
-            ScanSpace.xs,
-            ScanSpace.md,
-            ScanSpace.md,
-          ),
-          child: Text(
-            'Filters',
-            style: TextStyle(
-              fontSize: ScanType.sheet,
-              fontWeight: FontWeight.w500,
-              color: ScanColor.gray10,
-            ),
-          ),
-        ),
-        for (final filter in ScanFilter.values)
-          InkWell(
-            onTap: () => Navigator.pop(context, filter),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: ScanSpace.md,
-                vertical: ScanSpace.sm,
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      filter.label,
-                      style: const TextStyle(
-                        fontSize: ScanType.row,
-                        color: ScanColor.gray10,
-                      ),
-                    ),
-                  ),
-                  if (filter == selected)
-                    const Icon(
-                      Icons.check,
-                      size: ScanSize.icon,
-                      color: ScanColor.accent,
-                    ),
-                ],
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-/// Drag the pages into a new order.
 class _ReorderSheet extends StatefulWidget {
   const _ReorderSheet({required this.scrollController, required this.pages});
 
@@ -1025,24 +935,19 @@ class _ReorderSheetState extends State<_ReorderSheet> {
                 index: index,
                 child: Padding(
                   padding: const EdgeInsets.only(right: ScanSpace.sm),
-                  child: ColorFiltered(
-                    colorFilter: ColorFilter.matrix(
-                      colorMatrixFor(page.filter),
-                    ),
-                    child: RotatedBox(
-                      quarterTurns: page.turns,
-                      child: Image.memory(
-                        page.bytes,
-                        width: page.turns.isOdd
-                            ? ScanSize.filmThumbHeight
-                            : ScanSize.filmThumbWidth,
-                        height: page.turns.isOdd
-                            ? ScanSize.filmThumbWidth
-                            : ScanSize.filmThumbHeight,
-                        fit: BoxFit.cover,
-                        cacheWidth: 160,
-                        gaplessPlayback: true,
-                      ),
+                  child: RotatedBox(
+                    quarterTurns: page.turns,
+                    child: Image.memory(
+                      page.bytes,
+                      width: page.turns.isOdd
+                          ? ScanSize.filmThumbHeight
+                          : ScanSize.filmThumbWidth,
+                      height: page.turns.isOdd
+                          ? ScanSize.filmThumbWidth
+                          : ScanSize.filmThumbHeight,
+                      fit: BoxFit.cover,
+                      cacheWidth: 160,
+                      gaplessPlayback: true,
                     ),
                   ),
                 ),

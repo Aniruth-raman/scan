@@ -1,43 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// Result of a single native decode of a capture.
-///
-/// [previewJpeg] is display-sized, [rgba] is a small oriented RGBA buffer for the
-/// edge detector, and [fullWidth]/[fullHeight] describe the true capture size so
-/// quads can be expressed in full-resolution coordinates.
-@immutable
-class AnalyzedCapture {
-  const AnalyzedCapture({
-    required this.previewJpeg,
-    required this.fullWidth,
-    required this.fullHeight,
-    required this.rgba,
-    required this.detectWidth,
-    required this.detectHeight,
-  });
-
-  final Uint8List previewJpeg;
-  final int fullWidth;
-  final int fullHeight;
-  final Uint8List rgba;
-  final int detectWidth;
-  final int detectHeight;
-}
-
-@immutable
-class WarpedPage {
-  const WarpedPage({
-    required this.bytes,
-    required this.width,
-    required this.height,
-  });
-
-  final Uint8List bytes;
-  final int width;
-  final int height;
-}
-
 /// Tone presets, mirroring Lens's `ProcessMode.Scan` palette.
 ///
 /// The labels are the original's strings (`lenshvc_image_filter_scan_*`), which
@@ -59,84 +22,6 @@ enum ScanFilter {
 
   final int id;
   final String label;
-}
-
-/// Preview-only approximations of [ScanFilter], so the crop and review stages
-/// show the direction of the tone that will be written.
-///
-/// Only two of these are exact (identity and grayscale). The adaptive filters
-/// cannot be expressed as a colour matrix - the saved pixels come from the
-/// native renderer, which is the source of truth for every mode.
-List<double> colorMatrixFor(ScanFilter filter) {
-  switch (filter) {
-    case ScanFilter.none:
-      return const <double>[
-        1, 0, 0, 0, 0, //
-        0, 1, 0, 0, 0, //
-        0, 0, 1, 0, 0, //
-        0, 0, 0, 1, 0, //
-      ];
-    case ScanFilter.document:
-      return _concat(_contrast(1.15, -10), _saturation(0.95));
-    case ScanFilter.whiteboard:
-      return _concat(_contrast(1.12, -8), _saturation(0.9));
-    case ScanFilter.blackAndWhite:
-      return _concat(_contrast(1.7, -89.6), _saturation(0));
-    case ScanFilter.grayscale:
-      return _saturation(0);
-    case ScanFilter.sauvolaColor:
-      return _concat(_contrast(1.35, -40), _saturation(1.0));
-    case ScanFilter.sbcAdjust:
-      return _concat(_contrast(1.06, 0), _brightness(8));
-  }
-}
-
-/// `ColorMatrix.setSaturation`: luminance weights from Rec. 709.
-List<double> _saturation(double saturation) {
-  const lumR = 0.213;
-  const lumG = 0.715;
-  const lumB = 0.072;
-  final inverse = 1 - saturation;
-  final r = lumR * inverse;
-  final g = lumG * inverse;
-  final b = lumB * inverse;
-  return <double>[
-    r + saturation, g, b, 0, 0, //
-    r, g + saturation, b, 0, 0, //
-    r, g, b + saturation, 0, 0, //
-    0, 0, 0, 1, 0, //
-  ];
-}
-
-List<double> _contrast(double scale, double translate) => <double>[
-  scale, 0, 0, 0, translate, //
-  0, scale, 0, 0, translate, //
-  0, 0, scale, 0, translate, //
-  0, 0, 0, 1, 0, //
-];
-
-/// A pure translation, i.e. what a brightness lift looks like in this space.
-List<double> _brightness(double delta) => <double>[
-  1, 0, 0, 0, delta, //
-  0, 1, 0, 0, delta, //
-  0, 0, 1, 0, delta, //
-  0, 0, 0, 1, 0, //
-];
-
-/// `outer * inner` for 4x5 affine colour matrices.
-List<double> _concat(List<double> outer, List<double> inner) {
-  final out = List<double>.filled(20, 0);
-  for (var row = 0; row < 4; row++) {
-    for (var col = 0; col < 5; col++) {
-      var sum = 0.0;
-      for (var k = 0; k < 4; k++) {
-        sum += outer[row * 5 + k] * inner[k * 5 + col];
-      }
-      if (col == 4) sum += outer[row * 5 + 4];
-      out[row * 5 + col] = sum;
-    }
-  }
-  return out;
 }
 
 /// PDF size choice, mirroring Lens's `PdfQuality{High, Medium, Low}`.
@@ -226,76 +111,20 @@ abstract final class NativeImageKit {
     }
   }
 
-  /// Decodes once and returns a display preview plus a detector-sized buffer.
-  static Future<AnalyzedCapture> analyze(
-    Uint8List bytes, {
-    int previewEdge = 1440,
-    int detectEdge = 480,
-  }) async {
-    _requireAndroid();
-    final result = await _channel.invokeMapMethod<String, dynamic>('analyze', {
-      'bytes': bytes,
-      'previewEdge': previewEdge,
-      'detectEdge': detectEdge,
-    });
-    if (result == null) throw StateError('analyze returned no result');
-    return AnalyzedCapture(
-      previewJpeg: result['preview'] as Uint8List,
-      fullWidth: result['fullWidth'] as int,
-      fullHeight: result['fullHeight'] as int,
-      rgba: result['rgba'] as Uint8List,
-      detectWidth: result['detectWidth'] as int,
-      detectHeight: result['detectHeight'] as int,
-    );
-  }
-
-  /// Rectifies [corners] (full-resolution oriented coordinates, 8 values) at
-  /// capture resolution, bakes [filter] and encodes once.
-  static Future<WarpedPage> warp(
-    Uint8List bytes, {
-    required List<double> corners,
-    required int fullWidth,
-    required int fullHeight,
-    ScanFilter filter = ScanFilter.none,
-    int quality = ScanProfile.lensQuality,
-  }) async {
-    _requireAndroid();
-    final result = await _channel.invokeMapMethod<String, dynamic>('warp', {
-      'bytes': bytes,
-      'corners': corners,
-      'fullWidth': fullWidth,
-      'fullHeight': fullHeight,
-      'filter': filter.id,
-      'quality': quality,
-    });
-    if (result == null) throw StateError('warp returned no result');
-    return WarpedPage(
-      bytes: result['bytes'] as Uint8List,
-      width: result['width'] as int,
-      height: result['height'] as int,
-    );
-  }
-
-  /// Bakes the review stage's edits into a page: a quarter-turn rotation and a
-  /// tone preset, decoded and encoded once.
+  /// Bakes the review stage's edit into a page: a quarter-turn rotation,
+  /// decoded and encoded once.
   ///
-  /// Rotations and tones are held as state while editing, so this runs once per
-  /// page at save time instead of re-encoding on every tap.
+  /// The turn is held as state while editing, so this runs once per page at save
+  /// time instead of re-encoding on every tap.
   static Future<Uint8List> transform(
     Uint8List bytes, {
     int quarterTurns = 0,
-    ScanFilter filter = ScanFilter.none,
     int quality = ScanProfile.lensQuality,
   }) async {
     _requireAndroid();
     final result = await _channel.invokeMapMethod<String, dynamic>(
       'transform',
-      {
-        'bytes': bytes,
-        'quarterTurns': quarterTurns,
-        'filter': filter.id,
-        'quality': quality,
-      },
+      {'bytes': bytes, 'quarterTurns': quarterTurns, 'quality': quality},
     );
     if (result == null) throw StateError('transform returned no result');
     return result['bytes'] as Uint8List;
@@ -369,7 +198,10 @@ abstract final class NativeImageKit {
   ///
   /// Lens stamps the processed page the same way, which is what lets a later
   /// reader know the page's physical size.
-  static Future<void> setJpegDpi(String path, {int dpi = ScanProfile.lensDpi}) async {
+  static Future<void> setJpegDpi(
+    String path, {
+    int dpi = ScanProfile.lensDpi,
+  }) async {
     _requireAndroid();
     if (dpi <= 0) return;
     await _channel.invokeMethod<bool>('setJpegDpi', {'path': path, 'dpi': dpi});
