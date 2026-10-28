@@ -112,18 +112,19 @@ class DocumentDetector {
   /// A heatmap pixel at or above this is part of a corner.
   static const double _threshold = 0.3;
 
-  /// Synthetic border (in input pixels) drawn around the frame before inference.
+  /// Margin (in input pixels) added around the frame before inference.
   ///
   /// DocAligner is a corner-heatmap model and needs the page to sit inside the
-  /// frame with margin: a page that fills the frame scores ~0 and the detector
-  /// falls back to the full frame. Padding the input restores the margin without
-  /// cropping, and leaves a normally framed page unchanged (measured: test card
-  /// corners still within 1 px).
+  /// frame: with no margin a page that fills the view scores ~0 and the detector
+  /// returns nothing. The margin is filled by **mirroring** the frame outward,
+  /// not by a border colour. A dark border turns the frame itself into a bright
+  /// rectangle on a dark surround - a perfect-looking document - and the model
+  /// then returns the frame's corners with high confidence; measured on a
+  /// page-filling frame, a 32 px black border gave (61,-7) (1060,-5) (1073,1239)
+  /// (-5,1239) at 0.8-0.94, i.e. the whole screen. Mirrored, the same frame
+  /// produces no quad at all, which is the honest answer, and normally framed
+  /// pages are unchanged (sheet corners within ~6 px of the no-border result).
   static const int _pad = 32;
-
-  /// Border colour as a fraction of white (near-black, which the model reads as
-  /// "outside the page").
-  static const double _border = 13 / 255;
 
   final Interpreter _interpreter;
   final int _inputSize;
@@ -178,18 +179,14 @@ class DocumentDetector {
     if (width < 8 || height < 8 || rgba.length < width * height * 4) {
       return null;
     }
-    final input = Float32List(_inputSize * _inputSize * 3)..fillRange(
-      0,
-      _inputSize * _inputSize * 3,
-      _border,
-    );
+    final input = Float32List(_inputSize * _inputSize * 3);
     final inner = _inputSize - 2 * _pad;
     final xStep = width / inner;
     final yStep = height / inner;
-    for (var y = _pad; y < _inputSize - _pad; y++) {
-      final sy = (y - _pad + 0.5) * yStep - 0.5;
-      for (var x = _pad; x < _inputSize - _pad; x++) {
-        final sx = (x - _pad + 0.5) * xStep - 0.5;
+    for (var y = 0; y < _inputSize; y++) {
+      final sy = mirrorInto((y - _pad + 0.5) * yStep - 0.5, height);
+      for (var x = 0; x < _inputSize; x++) {
+        final sx = mirrorInto((x - _pad + 0.5) * xStep - 0.5, width);
         final pixel = _sampleRgba(rgba, width, height, sx, sy);
         final offset = (y * _inputSize + x) * 3;
         input[offset] = pixel.$1 / 255.0;
@@ -224,18 +221,20 @@ class DocumentDetector {
     final displayWidth = rotated ? height : width;
     final displayHeight = rotated ? width : height;
 
-    final input = Float32List(_inputSize * _inputSize * 3)..fillRange(
-      0,
-      _inputSize * _inputSize * 3,
-      _border,
-    );
+    final input = Float32List(_inputSize * _inputSize * 3);
     final inner = _inputSize - 2 * _pad;
     final xStep = displayWidth / inner;
     final yStep = displayHeight / inner;
-    for (var y = _pad; y < _inputSize - _pad; y++) {
-      final displayY = (y - _pad + 0.5) * yStep - 0.5;
-      for (var x = _pad; x < _inputSize - _pad; x++) {
-        final displayX = (x - _pad + 0.5) * xStep - 0.5;
+    for (var y = 0; y < _inputSize; y++) {
+      final displayY = mirrorInto(
+        (y - _pad + 0.5) * yStep - 0.5,
+        displayHeight,
+      );
+      for (var x = 0; x < _inputSize; x++) {
+        final displayX = mirrorInto(
+          (x - _pad + 0.5) * xStep - 0.5,
+          displayWidth,
+        );
         final sensor = _displayToSensor(
           displayX,
           displayY,
@@ -288,11 +287,30 @@ class DocumentDetector {
   }
 }
 
+/// Mirrors [value] into `0 .. length - 1` about the frame's edges, so the frame
+/// can be extended without drawing a new edge there.
+///
+/// A hard border (black or any flat colour) around the frame turns it into a
+/// bright rectangle on a dark surround, which the corner model reads as a
+/// document; mirroring continues the picture instead, so nothing at the frame
+/// boundary looks like a corner.
+double mirrorInto(double value, int length) {
+  final max = (length - 1).toDouble();
+  var v = value;
+  // The margins are tens of pixels on a frame of hundreds, so this settles in
+  // one or two passes.
+  while (v < 0 || v > max) {
+    if (v < 0) v = -v;
+    if (v > max) v = 2 * max - v;
+  }
+  return v;
+}
+
 /// Turns the four corner heatmaps into one quad in frame coordinates, or null
 /// when any corner has no confident region (no document).
 ///
 /// [heatmaps] is `heatmapSize * heatmapSize * 4` values in NHWC order. [pad] is
-/// the synthetic border (in input pixels) that was added before inference, so
+/// the margin (in input pixels) mirrored around the frame before inference, so
 /// the heatmap coordinates are mapped back through it onto the frame.
 DocumentQuad? detectQuadFromHeatmaps(
   Float32List heatmaps, {
@@ -328,11 +346,7 @@ DocumentQuad? detectQuadFromHeatmaps(
 
 /// Weighted centroid of the largest region at or above [DocumentDetector._threshold]
 /// in one corner map, or null when it has none.
-(double, double)? _cornerCentroid(
-  Float32List heatmaps,
-  int corner,
-  int size,
-) {
+(double, double)? _cornerCentroid(Float32List heatmaps, int corner, int size) {
   final visited = Uint8List(size * size);
   var bestArea = 0;
   var bestX = 0.0;
@@ -388,53 +402,53 @@ DocumentQuad? detectQuadFromHeatmaps(
 // ------------------------------------------------------------------ mapping --
 
 math.Point<double> _displayToSensor(
-    double displayX,
-    double displayY, {
-    required int displayWidth,
-    required int displayHeight,
-    required int sensorWidth,
-    required int sensorHeight,
-    required int rotationDegrees,
-    required bool mirrored,
-  }) {
-    final x = mirrored ? (displayWidth - 1) - displayX : displayX;
-    final y = displayY;
-    switch (rotationDegrees) {
-      case 90:
-        // Display is the sensor frame rotated 90 degrees clockwise.
-        return math.Point(y, (sensorHeight - 1) - x);
-      case 180:
-        return math.Point((sensorWidth - 1) - x, (sensorHeight - 1) - y);
-      case 270:
-        return math.Point((sensorWidth - 1) - y, x);
-      default:
-        return math.Point(x, y);
-    }
+  double displayX,
+  double displayY, {
+  required int displayWidth,
+  required int displayHeight,
+  required int sensorWidth,
+  required int sensorHeight,
+  required int rotationDegrees,
+  required bool mirrored,
+}) {
+  final x = mirrored ? (displayWidth - 1) - displayX : displayX;
+  final y = displayY;
+  switch (rotationDegrees) {
+    case 90:
+      // Display is the sensor frame rotated 90 degrees clockwise.
+      return math.Point(y, (sensorHeight - 1) - x);
+    case 180:
+      return math.Point((sensorWidth - 1) - x, (sensorHeight - 1) - y);
+    case 270:
+      return math.Point((sensorWidth - 1) - y, x);
+    default:
+      return math.Point(x, y);
+  }
+}
+
+/// Bilinear sample of an RGBA buffer, clamped at the edges.
+(double, double, double) _sampleRgba(
+  Uint8List rgba,
+  int width,
+  int height,
+  double x,
+  double y,
+) {
+  final x0 = x.floor().clamp(0, width - 1);
+  final y0 = y.floor().clamp(0, height - 1);
+  final x1 = (x0 + 1).clamp(0, width - 1);
+  final y1 = (y0 + 1).clamp(0, height - 1);
+  final fx = (x - x0).clamp(0.0, 1.0);
+  final fy = (y - y0).clamp(0.0, 1.0);
+  final i00 = (y0 * width + x0) * 4;
+  final i10 = (y0 * width + x1) * 4;
+  final i01 = (y1 * width + x0) * 4;
+  final i11 = (y1 * width + x1) * 4;
+  double channel(int offset) {
+    final top = rgba[i00 + offset] * (1 - fx) + rgba[i10 + offset] * fx;
+    final bottom = rgba[i01 + offset] * (1 - fx) + rgba[i11 + offset] * fx;
+    return top * (1 - fy) + bottom * fy;
   }
 
-  /// Bilinear sample of an RGBA buffer, clamped at the edges.
-  (double, double, double) _sampleRgba(
-    Uint8List rgba,
-    int width,
-    int height,
-    double x,
-    double y,
-  ) {
-    final x0 = x.floor().clamp(0, width - 1);
-    final y0 = y.floor().clamp(0, height - 1);
-    final x1 = (x0 + 1).clamp(0, width - 1);
-    final y1 = (y0 + 1).clamp(0, height - 1);
-    final fx = (x - x0).clamp(0.0, 1.0);
-    final fy = (y - y0).clamp(0.0, 1.0);
-    final i00 = (y0 * width + x0) * 4;
-    final i10 = (y0 * width + x1) * 4;
-    final i01 = (y1 * width + x0) * 4;
-    final i11 = (y1 * width + x1) * 4;
-    double channel(int offset) {
-      final top = rgba[i00 + offset] * (1 - fx) + rgba[i10 + offset] * fx;
-      final bottom = rgba[i01 + offset] * (1 - fx) + rgba[i11 + offset] * fx;
-      return top * (1 - fy) + bottom * fy;
-    }
-
-    return (channel(0), channel(1), channel(2));
-  }
+  return (channel(0), channel(1), channel(2));
+}

@@ -611,3 +611,27 @@ Verified on the M34 by driving the real flow over adb:
 
 Note: Auto Capture was on, so one steady scene produced an automatic shot plus the manual one.
 That is the feature working, and it is why the first test session held two pages.
+
+## The border was fabricating a document (2026-10-28)
+
+Reported: "it draws a full-screen quad instead of just the page". Correct, and it was the padding, not
+the mapping. A near-black `_pad` around the frame makes the frame itself a bright rectangle on a dark
+surround, which is exactly what a document looks like, so the model finds it with confidence:
+
+| frame | pad 32 black (before) | pad 32 mirrored (now) |
+|---|---|---|
+| page fills the view | `(61,-7) (1060,-5) (1073,1239) (-5,1239)` at 0.80-0.94 - the whole screen | no quad |
+| sheet with a margin | `(666,241) (1129,208) (1249,837) (700,891)` | `(667,232) (1134,208) (1249,834) (704,893)` |
+| sheet cropped to the page | frame corners, 0.86-0.91 | no quad |
+| sheet with background on one side | `(160,243) ...` | `(177,234) ...` |
+
+So the "margin the model needs" was being bought by handing it a fake page. The margin is still
+needed (with no margin at all, a page that fills the view scores under the 0.3 threshold too), but it
+is now filled by **mirroring the frame outward** (`mirrorInto`, about the frame's edges) instead of a
+border colour, so nothing at the frame boundary looks like a corner.
+
+Worth stating plainly, because it bounds what this detector can ever do: a corner-heatmap model can
+only report 4 points, so when a page runs off the frame there are no corners to report and it returns
+nothing. That is why Lens uses a *mask* - a mask can outline the part of the page that is still
+visible. If "page fills the view" has to be outlined rather than captured whole, that is a
+segmentation job, not a corner job.

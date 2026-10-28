@@ -32,12 +32,7 @@ void main() {
   group('detectQuadFromHeatmaps', () {
     test('recovers the four corner blobs and scales them to the frame', () {
       const size = 32;
-      final corners = <(double, double)>[
-        (6, 6),
-        (26, 6),
-        (26, 26),
-        (6, 26),
-      ];
+      final corners = <(double, double)>[(6, 6), (26, 6), (26, 26), (6, 26)];
       final quad = detectQuadFromHeatmaps(
         _heatmapsWithCorners(size, corners),
         heatmapSize: size,
@@ -186,6 +181,44 @@ void main() {
         bottomLeft: a.bottomLeft,
       );
       expect(a.distanceTo(moved), closeTo(5, 1e-9));
+    });
+  });
+
+  group('mirrorInto', () {
+    // abcde mirrored about its edges: ... c b | a b c d e | d c b ...
+    test('leaves values inside the frame alone', () {
+      expect(mirrorInto(0, 5), 0);
+      expect(mirrorInto(2, 5), 2);
+      expect(mirrorInto(4, 5), 4);
+    });
+
+    test('mirrors past the right edge', () {
+      expect(mirrorInto(5, 5), 3);
+      expect(mirrorInto(6, 5), 2);
+      expect(mirrorInto(7, 5), 1);
+      expect(mirrorInto(8, 5), 0);
+      expect(mirrorInto(9, 5), 1);
+    });
+
+    test('mirrors past the left edge', () {
+      expect(mirrorInto(-1, 5), 1);
+      expect(mirrorInto(-2, 5), 2);
+      expect(mirrorInto(-4, 5), 4);
+      expect(mirrorInto(-5, 5), 3);
+    });
+
+    test('keeps fractional coordinates inside the frame', () {
+      // The frame spans 0..4, so anything past that folds back.
+      expect(mirrorInto(3.5, 5), closeTo(3.5, 1e-9));
+      expect(mirrorInto(4.5, 5), closeTo(3.5, 1e-9));
+      expect(mirrorInto(5.5, 5), closeTo(2.5, 1e-9));
+    });
+
+    test('never returns a coordinate outside the frame', () {
+      for (var value = -40.0; value <= 40; value += 0.5) {
+        final mapped = mirrorInto(value, 9);
+        expect(mapped, inInclusiveRange(0, 8));
+      }
     });
   });
 }
