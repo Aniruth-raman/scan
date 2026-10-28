@@ -84,6 +84,156 @@ void main() {
     });
   });
 
+  group('prepareYuvInput', () {
+    // The live frame is inset into the model input; sample inside that area.
+    const inset = documentModelInputSize ~/ 5;
+    const innerSide = documentModelInputSize - 2 * inset;
+    int inner(int row, int column) =>
+        ((row + inset) * documentModelInputSize + column + inset) * 3;
+
+    Uint8List plane(int length, int value) =>
+        Uint8List(length)..fillRange(0, length, value);
+
+    test('neutral chroma keeps the page colourless', () {
+      final input = prepareYuvInput(
+        y: plane(4 * 2, 235),
+        u: plane(2, 128),
+        v: plane(2, 128),
+        width: 4,
+        height: 2,
+        yRowStride: 4,
+        uvRowStride: 2,
+        uvPixelStride: 1,
+        rotationDegrees: 0,
+      );
+      // Undo the normalisation: neutral chroma means all three channels hold
+      // the same grey, straight from luma.
+      const mean = [0.485, 0.456, 0.406];
+      const std = [0.229, 0.224, 0.225];
+      double raw(int channel) =>
+          input[inner(10, 10) + channel] * std[channel] + mean[channel];
+      expect(raw(0), closeTo(raw(1), 1e-6));
+      expect(raw(0), closeTo(raw(2), 1e-6));
+      expect(raw(0), closeTo(235 / 255, 1e-6));
+    });
+
+    test('chroma reaches the model instead of being dropped', () {
+      final input = prepareYuvInput(
+        y: plane(4, 200),
+        u: plane(1, 90),
+        v: plane(1, 200),
+        width: 2,
+        height: 2,
+        yRowStride: 2,
+        uvRowStride: 1,
+        uvPixelStride: 1,
+        rotationDegrees: 0,
+      );
+      // High Cr and low Cb make the red channel the brightest.
+      final at = inner(10, 10);
+      expect(input[at], greaterThan(input[at + 2]));
+    });
+
+    test('a quarter turn puts the sensor column on the display top row', () {
+      // 2x4 sensor, left column white on a black page.
+      final y = Uint8List(2 * 4);
+      for (var row = 0; row < 4; row++) {
+        y[row * 2] = 235;
+      }
+      final chroma = plane(2, 128);
+      final input = prepareYuvInput(
+        y: y,
+        u: chroma,
+        v: chroma,
+        width: 2,
+        height: 4,
+        yRowStride: 2,
+        uvRowStride: 1,
+        uvPixelStride: 1,
+        rotationDegrees: 90,
+      );
+      final lastRow = documentModelInputSize - 2 * inset - 1;
+      expect(input[inner(0, 10)], greaterThan(input[inner(lastRow, 10)]));
+    });
+
+    test('every model pixel averages its sensor block, not a point sample', () {
+      // A 1-pixel checkerboard at two sensor pixels per model pixel: only
+      // averaging can make that grey, and averaging is what keeps live sensor
+      // grain out of the model.
+      const side = innerSide * 2;
+      final y = Uint8List(side * side);
+      for (var row = 0; row < side; row++) {
+        for (var column = 0; column < side; column++) {
+          y[row * side + column] = (row + column).isEven ? 255 : 0;
+        }
+      }
+      final chroma = plane((side ~/ 2) * (side ~/ 2), 128);
+      final input = prepareYuvInput(
+        y: y,
+        u: chroma,
+        v: chroma,
+        width: side,
+        height: side,
+        yRowStride: side,
+        uvRowStride: side ~/ 2,
+        uvPixelStride: 1,
+        rotationDegrees: 0,
+      );
+      // Undo the normalisation: the block average is mid grey, not black/white.
+      const mean = [0.485, 0.456, 0.406];
+      const std = [0.229, 0.224, 0.225];
+      final value = input[inner(10, 10)] * std[0] + mean[0];
+      expect(value, closeTo(127.5 / 255, 0.01));
+    });
+
+    test('a dim frame is stretched towards the light of a real photo', () {
+      // Half the frame at 60, half at 90: a dim room, as the live feed arrives.
+      const side = documentModelInputSize * 2;
+      final y = Uint8List(side * side);
+      for (var row = 0; row < side; row++) {
+        for (var column = 0; column < side; column++) {
+          y[row * side + column] = column < side ~/ 2 ? 60 : 90;
+        }
+      }
+      final chroma = plane((side ~/ 2) * (side ~/ 2), 128);
+      final input = prepareYuvInput(
+        y: y,
+        u: chroma,
+        v: chroma,
+        width: side,
+        height: side,
+        yRowStride: side,
+        uvRowStride: side ~/ 2,
+        uvPixelStride: 1,
+        rotationDegrees: 0,
+      );
+      const mean = [0.485, 0.456, 0.406];
+      const std = [0.229, 0.224, 0.225];
+      // The bright half now reaches white, the dark half the black point.
+      final bright = input[inner(100, 140)] * std[0] + mean[0];
+      final dark = input[inner(100, 10)] * std[0] + mean[0];
+      expect(bright, closeTo(1.0, 0.02));
+      expect(dark, closeTo(0.0, 0.02));
+    });
+    test('a mask that fills the inset input maps back to the whole frame', () {
+      const size = 64;
+      final mask = Uint8List(size * size)..fillRange(0, size * size, 1);
+      final quad = quadFromMask(
+        mask,
+        size: size,
+        frameWidth: 640,
+        frameHeight: 480,
+        inset: 8,
+      );
+      expect(quad, isNotNull);
+      // The synthetic border is not part of the frame, so corners clamp to it.
+      expect(quad!.topLeft.x, 0);
+      expect(quad.topLeft.y, 0);
+      expect(quad.bottomRight.x, closeTo(639, 1));
+      expect(quad.bottomRight.y, closeTo(479, 1));
+    });
+  });
+
   group('DocumentQuad', () {
     test('fullFrame covers the frame edges', () {
       final quad = DocumentQuad.fullFrame(100, 50);

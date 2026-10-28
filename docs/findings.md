@@ -611,3 +611,73 @@ Verified on the M34 by driving the real flow over adb:
 
 Note: Auto Capture was on, so one steady scene produced an automatic shot plus the manual one.
 That is the feature working, and it is why the first test session held two pages.
+
+## The live outline was fed grayscale (2026-10-28)
+
+Symptom: the outline found a page but sat off it. The model was never the problem on the stills -
+`prepareAdjustPreview` detects on colour RGBA and lands on the page - so the difference had to be
+the live feed.
+
+`camera_screen._onFrame` used only `image.planes.first`, i.e. the Y plane, and `document_detector`
+replicated it across R/G/B. `camera_android_camerax` 0.7.6 has no JPEG analysis output
+(`_imageAnalysisOutputFormatFromImageFormatGroup` returns null for `ImageFormatGroup.jpeg`, so the
+request silently falls back to YUV_420_888 and three planes do arrive), which means chroma was
+there all along and simply unused.
+
+Measured on 20 val pages, same model:
+
+| live input | corner error |
+|---|---|
+| luma replicated to RGB | 34.7 px mean, 174 px worst |
+| colour | 8.1 px mean |
+
+Fix: `prepareYuvInput` samples Y, U and V (full-range BT.601) and the camera asks for
+`ImageFormatGroup.yuv420` explicitly.
+
+## The live feed is dim, flat and noisy, so the model saw no page (2026-10-28)
+
+With colour in place the outline still missed. Dumping the model input from the device (`DUMP`
+hex over logcat, since a release build cannot be read with `run-as`) showed a *correct* portrait
+image of the page... that the model then segmented into fragments. Replaying that frame offline:
+
+| same frame, preprocessing | Dice vs the page |
+|---|---|
+| as the feed arrives (dim, flat, grainy) | 0.15 |
+| brightened, no denoise | ~0.5 |
+| area-averaged + auto-levelled | 0.78 |
+
+Two causes, both in the sampler, both fixed in `prepareYuvInput`:
+
+1. Point sampling. The model was trained on `cv2.resize(..., INTER_AREA)`, which averages each
+   block and with it the sensor grain. The live path sampled one pixel per model pixel, so grain
+   went straight into the input. Now every model pixel is the average of its sensor block.
+2. No tone normalisation. The analysis stream is much darker than the capture stream (Samsung's
+   JPEG pipeline brightens and denoises; the YUV analysis frames are raw), so a page read as grey.
+   The frame is now stretched to its own 2nd..98th percentile, which costs 0.05 Dice on bright
+   photos (0.989 -> 0.984 over 30 val pages) and buys 0.63 on dim ones.
+
+Inference also went from 350-500 ms per frame single-threaded to four threads
+(`InterpreterOptions()..threads = 4`).
+
+## The model expects a page that fills ~15% of the frame (2026-10-28)
+
+The remaining miss is a distribution gap, not a bug. SmartDoc 2015 - the whole training set - is
+a sheet on a desk, occupying about 15% of the frame (`masks/datasheet001_00001.png`: 0.154). Hand
+the same model a book page that fills the view and it under-segments:
+
+| page share of the model input | share of the page it segmented |
+|---|---|
+| 100% (full-frame live view) | 24% |
+| 85% | 43% |
+| 70% | 67% |
+| 55% | 85% |
+| 40% | 92% |
+
+A page filling the frame is exactly what a phone held over a book produces, so `_liveInset` samples
+the frame into the middle 60% of the model input and pads the rest with the frame's own average
+tone. `quadFromMask(inset:)` undoes that when mapping corners back, clamping to the frame.
+
+This is a workaround with a shelf life: it costs corner precision (the page is drawn ~150 px wide
+instead of ~250 px) and it is not the model's real fix. The real fix is training data that looks
+like the app's live view - book pages filling the frame, phone-held, dim indoor light, portrait -
+and then deleting `_liveInset`.

@@ -1,12 +1,13 @@
 import 'dart:async';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'document_detector.dart';
 
-/// A long-lived isolate that owns the M-LSD interpreter.
+/// A long-lived isolate that owns the page-segmentation interpreter.
 ///
 /// The model has to be parsed and its tensors allocated once, not per frame, and
 /// inference must not block the UI isolate. Assets cannot be loaded off the root
@@ -72,23 +73,16 @@ class DocumentDetectionWorker {
     }
   }
 
-  /// Detects a quad in a camera luminance (Y) plane, in display coordinates.
-  Future<DocumentQuad?> detectLuma({
-    required Uint8List luminance,
-    required int width,
-    required int height,
-    required int bytesPerRow,
-    required int rotationDegrees,
-    bool mirrored = false,
+  /// Detects a quad in a prepared model input, built by [prepareYuvInput] or
+  /// [prepareRgbaInput]. The two sizes are the frame's display-oriented size,
+  /// which the returned corners are expressed in.
+  Future<DocumentQuad?> detectPrepared(
+    Float32List input, {
+    required int displayWidth,
+    required int displayHeight,
   }) {
     if (!isReady) return Future<DocumentQuad?>.value();
-    return _send(0, luminance, [
-      width,
-      height,
-      bytesPerRow,
-      rotationDegrees,
-      mirrored,
-    ]);
+    return _send(0, input, [displayWidth, displayHeight]);
   }
 
   /// Detects a quad in a display-oriented RGBA buffer from the native analyser.
@@ -98,10 +92,10 @@ class DocumentDetectionWorker {
     required int height,
   }) {
     if (!isReady) return Future<DocumentQuad?>.value();
-    return _send(1, rgba, [width, height, 0, 0, false]);
+    return _send(1, rgba, [width, height]);
   }
 
-  Future<DocumentQuad?> _send(int kind, Uint8List data, List<Object> geometry) {
+  Future<DocumentQuad?> _send(int kind, TypedData data, List<int> geometry) {
     final commands = _commands;
     if (commands == null) return Future<DocumentQuad?>.value();
     final id = _nextId++;
@@ -136,27 +130,21 @@ Future<void> _workerMain(SendPort out) async {
       out.send([0, true]);
       return;
     }
-    if (message is! List || message.length != 8) return;
+    if (message is! List || message.length != 5) return;
     final id = message[0] as int;
-    final kind = message[1] as int;
-    final data = (message[2] as TransferableTypedData)
-        .materialize()
-        .asUint8List();
+    final data = message[2] as TransferableTypedData;
     DocumentQuad? quad;
     final active = detector;
     if (active != null) {
       try {
-        quad = kind == 0
-            ? active.detectFromLuma(
-                data,
-                width: message[3] as int,
-                height: message[4] as int,
-                bytesPerRow: message[5] as int,
-                rotationDegrees: message[6] as int,
-                mirrored: message[7] as bool,
+        quad = message[1] == 0
+            ? active.detectPrepared(
+                data.materialize().asFloat32List(),
+                displayWidth: message[3] as int,
+                displayHeight: message[4] as int,
               )
             : active.detectFromRgba(
-                data,
+                data.materialize().asUint8List(),
                 width: message[3] as int,
                 height: message[4] as int,
               );

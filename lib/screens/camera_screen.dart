@@ -57,6 +57,7 @@ class _CameraScreenState extends State<CameraScreen> {
   bool _analyzing = false;
   bool _wasDetecting = false;
   bool _streaming = false;
+  bool _warnedNoChroma = false;
   Size _frameDisplaySize = Size.zero;
 
   /// Pages captured in this session, already cropped.
@@ -124,7 +125,9 @@ class _CameraScreenState extends State<CameraScreen> {
         // sensor away. Capture at the largest size the device offers.
         ResolutionPreset.max,
         enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.jpeg,
+        // Detection needs the colour planes: CameraX here only streams YUV, so
+        // asking for anything else silently falls back to it.
+        imageFormatGroup: ImageFormatGroup.yuv420,
       );
       _controller = controller;
       await controller.initialize().timeout(const Duration(seconds: 15));
@@ -173,24 +176,43 @@ class _CameraScreenState extends State<CameraScreen> {
 
   Future<void> _onFrame(CameraImage image) async {
     if (_analyzing || !_detectEnabled || _capturing) return;
-    final yPlane = image.planes.first;
-    if (yPlane.bytes.isEmpty) return;
+    final planes = image.planes;
+    // CameraX streams YUV_420_888; without chroma the page mask sits off the
+    // page, so skip detection rather than guess from luma alone.
+    if (planes.length < 3) {
+      if (!_warnedNoChroma) {
+        _warnedNoChroma = true;
+        debugPrint('document detection needs YUV planes, got ${planes.length}');
+      }
+      return;
+    }
+    final rotation = _controller?.description.sensorOrientation ?? 90;
+    // Sample before the first await: the camera recycles these planes as soon
+    // as the callback returns.
+    final input = prepareYuvInput(
+      y: planes[0].bytes,
+      u: planes[1].bytes,
+      v: planes[2].bytes,
+      width: image.width,
+      height: image.height,
+      yRowStride: planes[0].bytesPerRow,
+      uvRowStride: planes[1].bytesPerRow,
+      uvPixelStride: planes[1].bytesPerPixel ?? 2,
+      rotationDegrees: rotation,
+    );
+    final rotated = rotation == 90 || rotation == 270;
+    final frame = Size(
+      (rotated ? image.height : image.width).toDouble(),
+      (rotated ? image.width : image.height).toDouble(),
+    );
     _analyzing = true;
     try {
-      final rotation = _controller?.description.sensorOrientation ?? 90;
-      final quad = await _detector.detectLuma(
-        luminance: Uint8List.fromList(yPlane.bytes),
-        width: image.width,
-        height: image.height,
-        bytesPerRow: yPlane.bytesPerRow,
-        rotationDegrees: rotation,
+      final quad = await _detector.detectPrepared(
+        input,
+        displayWidth: frame.width.round(),
+        displayHeight: frame.height.round(),
       );
       if (!mounted) return;
-      final rotated = rotation == 90 || rotation == 270;
-      final frame = Size(
-        (rotated ? image.height : image.width).toDouble(),
-        (rotated ? image.width : image.height).toDouble(),
-      );
       // The detector has no memory of the previous frame; the smoother does, so
       // the outline stops hopping between competing candidates.
       final previous = _quad;
@@ -286,9 +308,8 @@ class _CameraScreenState extends State<CameraScreen> {
       if (!mounted) return;
       await HapticFeedback.mediumImpact();
       if (!mounted) return;
-      final outline = (shotQuad == null ||
-              shotFrame.width <= 0 ||
-              shotFrame.height <= 0)
+      final outline =
+          (shotQuad == null || shotFrame.width <= 0 || shotFrame.height <= 0)
           ? null
           : <double>[
               shotQuad.topLeft.x / shotFrame.width,
