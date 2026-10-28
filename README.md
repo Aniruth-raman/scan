@@ -82,6 +82,17 @@ The design and the evidence behind it are in the repo, not in my head:
 No part of the original app — code, resources, assets or the APK itself — is included here. What is
 included is the measurements and the reasoning.
 
+## Branches
+
+This repo is also the record of how the detection was chosen. Each branch is one attempt, and
+[docs/branches.md](docs/branches.md) says what each one is, what happened to it, and where the
+measurements live:
+
+- `master` - the offline build: bundled M-LSD detector (`v1.0.0-msld`).
+- `mlkit-scanner` - the same app on Google's ML Kit Document Scanner (`v1.0.0-mlkit`).
+- `docaligner`, `segmentation`, `lens-reproduction` - the attempts that did not ship, kept for the
+  evidence they produced.
+
 ## Licence and credits
 
 MIT — see [LICENSE](LICENSE).
