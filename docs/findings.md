@@ -673,11 +673,48 @@ the same model a book page that fills the view and it under-segments:
 | 55% | 85% |
 | 40% | 92% |
 
-A page filling the frame is exactly what a phone held over a book produces, so `_liveInset` samples
-the frame into the middle 60% of the model input and pads the rest with the frame's own average
-tone. `quadFromMask(inset:)` undoes that when mapping corners back, clamping to the frame.
+A page filling the frame is exactly what a phone held over a book produces, so the first reaction was
+to sample the frame into the middle 60% of the model input and pad the rest with the frame's average
+tone (`_liveInset`). Measured on the M34 it does land the outline back on the page — and it makes the
+quad the whole screen, because a page that fills the view *is* the whole screen. Reverted. The number
+above is a property of the training set, not something to paper over in the sampler.
 
-This is a workaround with a shelf life: it costs corner precision (the page is drawn ~150 px wide
-instead of ~250 px) and it is not the model's real fix. The real fix is training data that looks
-like the app's live view - book pages filling the frame, phone-held, dim indoor light, portrait -
-and then deleting `_liveInset`.
+## How other scanners detect the page (2026-10-28)
+
+Surveyed the published accounts and the open-source scanners. Four families, and every mature
+product ends up in the fourth:
+
+| family | who uses it | how | size / speed | why it fails |
+|---|---|---|---|---|
+| Canny → contours → `approxPolyDP` == 4 | `jscanify`, `pqpo/SmartCropper`, `adityaarora1/LiveEdgeDetection`, Scanbot's own tutorial | grayscale, blur, Otsu, Canny, largest 4-gon contour | no model, ~ms | white page on a white desk, shadows, busy backgrounds; needs a colour-contrasting border |
+| lines → quad scoring | ScannerPro iteration 1 (custom edges + Hough + quadrilateral scoring), our M-LSD branch | detect segments, intersect lines, score candidate quads against the edge map | 20-25 fps on NEON | same contrast problem; ScannerPro replaced it |
+| dense segmentation mask | **Lens** (`mnv2_ep42_wb_quant.ort`, 342 KB int8, MobileNetV2 + bilinear decoder), ScannerPro iteration 2, this branch | classify every pixel "page", then read corners off the mask contour | Lens 342 KB; ScannerPro 5 fps on an iPhone X | needs training data from the exact viewing conditions; ours only ever saw SmartDoc's small sheets |
+| corner heatmaps ("keypoints") | **ScannerPro iteration 3 (what ships)**, `DocsaidLab/DocAligner`, `amtam0/DeePaperScan` | MobileNet/LCNet regresses four corner heatmaps; centroid of each peak is the corner | DocAligner LCNet 4.8 MB ONNX, 256×256 in | needs the page inside the frame (margin), or confidence collapses |
+
+ScannerPro's account is the roadmap, in their own words: classic CV (20-25 fps) → DNN segmentation
+(5 fps, better on hard scenes) → **MobileNet keypoint detection on the live stream, segmentation only
+after capture, plus a Kalman filter fed by the IMU** to stop the outline jittering. Lens ships the
+segmentation variant plus a 3-class "is a document here" gate and a classic `GetCroppingQuad` path
+that `isPerfCriteriaMet()` chooses between.
+
+DocAligner's README is worth reading for the failure mode we hit: they abandoned point regression
+for heatmaps because 128/256 px downscaling loses the corner, and their verdict on the benchmark
+literature is blunt — "many architectures score well on benchmarks but lack generalization in
+practical applications".
+
+**The relevant discovery is that this repo already built and verified ScannerPro's third iteration.**
+The `docaligner` branch (2026-10-27) converted `lcnet100_h_e_bifpn_256_fp32.onnx` (4,767,987 B,
+Apache-2.0) to TFLite with onnx2tf, lowered the BiFPN `Einsum` to `Reshape/Mul/ReduceSum` so it
+matches the ONNX exactly, ported the heatmap→centroid post-processing (threshold 0.3, which doubles
+as the no-document signal), matched DocAligner's own test card within 1.3 px, and — on the M34 — put
+a tight quad on all four corners of a real book cover with the crop landing on the page. It needed
+the same margin hack (`_pad = 32`) but there it was verified end-to-end.
+
+So the branch we are on replaced a detector that worked on the real device with one that does not.
+Two things that model family explains:
+
+1. A corner heatmap answers "where is this corner", so a page filling the view still has four
+   findable corners. A per-pixel "is this page" classifier has to decide the same thing about every
+   pixel of a page that fills the frame, and ours had never seen that during training.
+2. Precision: heatmap centroids are sub-pixel, so the 256 px input does not have to be the whole
+   frame — no trade between context and accuracy.

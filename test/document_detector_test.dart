@@ -85,12 +85,6 @@ void main() {
   });
 
   group('prepareYuvInput', () {
-    // The live frame is inset into the model input; sample inside that area.
-    const inset = documentModelInputSize ~/ 5;
-    const innerSide = documentModelInputSize - 2 * inset;
-    int inner(int row, int column) =>
-        ((row + inset) * documentModelInputSize + column + inset) * 3;
-
     Uint8List plane(int length, int value) =>
         Uint8List(length)..fillRange(0, length, value);
 
@@ -110,8 +104,7 @@ void main() {
       // the same grey, straight from luma.
       const mean = [0.485, 0.456, 0.406];
       const std = [0.229, 0.224, 0.225];
-      double raw(int channel) =>
-          input[inner(10, 10) + channel] * std[channel] + mean[channel];
+      double raw(int channel) => input[channel] * std[channel] + mean[channel];
       expect(raw(0), closeTo(raw(1), 1e-6));
       expect(raw(0), closeTo(raw(2), 1e-6));
       expect(raw(0), closeTo(235 / 255, 1e-6));
@@ -130,7 +123,7 @@ void main() {
         rotationDegrees: 0,
       );
       // High Cr and low Cb make the red channel the brightest.
-      final at = inner(10, 10);
+      const at = 0;
       expect(input[at], greaterThan(input[at + 2]));
     });
 
@@ -152,15 +145,15 @@ void main() {
         uvPixelStride: 1,
         rotationDegrees: 90,
       );
-      final lastRow = documentModelInputSize - 2 * inset - 1;
-      expect(input[inner(0, 10)], greaterThan(input[inner(lastRow, 10)]));
+      final lastRow = (documentModelInputSize - 1) * documentModelInputSize * 3;
+      expect(input[0], greaterThan(input[lastRow]));
     });
 
     test('every model pixel averages its sensor block, not a point sample', () {
       // A 1-pixel checkerboard at two sensor pixels per model pixel: only
       // averaging can make that grey, and averaging is what keeps live sensor
       // grain out of the model.
-      const side = innerSide * 2;
+      const side = documentModelInputSize * 2;
       final y = Uint8List(side * side);
       for (var row = 0; row < side; row++) {
         for (var column = 0; column < side; column++) {
@@ -182,7 +175,7 @@ void main() {
       // Undo the normalisation: the block average is mid grey, not black/white.
       const mean = [0.485, 0.456, 0.406];
       const std = [0.229, 0.224, 0.225];
-      final value = input[inner(10, 10)] * std[0] + mean[0];
+      final value = input[0] * std[0] + mean[0];
       expect(value, closeTo(127.5 / 255, 0.01));
     });
 
@@ -210,12 +203,14 @@ void main() {
       const mean = [0.485, 0.456, 0.406];
       const std = [0.229, 0.224, 0.225];
       // The bright half now reaches white, the dark half the black point.
-      final bright = input[inner(100, 140)] * std[0] + mean[0];
-      final dark = input[inner(100, 10)] * std[0] + mean[0];
+      final bright =
+          input[(100 * documentModelInputSize + 200) * 3] * std[0] + mean[0];
+      final dark =
+          input[(100 * documentModelInputSize + 20) * 3] * std[0] + mean[0];
       expect(bright, closeTo(1.0, 0.02));
       expect(dark, closeTo(0.0, 0.02));
     });
-    test('a mask that fills the inset input maps back to the whole frame', () {
+    test('a mask that fills the input maps back to the whole frame', () {
       const size = 64;
       final mask = Uint8List(size * size)..fillRange(0, size * size, 1);
       final quad = quadFromMask(
@@ -223,14 +218,14 @@ void main() {
         size: size,
         frameWidth: 640,
         frameHeight: 480,
-        inset: 8,
       );
       expect(quad, isNotNull);
-      // The synthetic border is not part of the frame, so corners clamp to it.
+      // One mask cell short of the edge, which is how the mapping has always
+      // worked: the mask covers the frame, not an extra cell of it.
       expect(quad!.topLeft.x, 0);
       expect(quad.topLeft.y, 0);
-      expect(quad.bottomRight.x, closeTo(639, 1));
-      expect(quad.bottomRight.y, closeTo(479, 1));
+      expect(quad.bottomRight.x, closeTo(630, 1));
+      expect(quad.bottomRight.y, closeTo(472.5, 1));
     });
   });
 

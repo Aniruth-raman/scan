@@ -91,15 +91,6 @@ class DocumentQuad {
 /// Edge length of the model's square input, in pixels.
 const int documentModelInputSize = 256;
 
-/// Border, in model pixels, that the live frame is inset by on every side.
-///
-/// shortcut: the model was trained on sheets that fill about 15% of the frame
-/// and it under-segments a page that fills the view (measured on a real frame:
-/// it covered 24% of the page at full scale and 85% once the page was inset to
-/// 0.55 of the input). Remove this when the model is retrained on full-frame
-/// pages.
-const int _liveInset = documentModelInputSize ~/ 5;
-
 /// ImageNet normalisation, matching the training preprocessing.
 const List<double> _imagenetMean = [0.485, 0.456, 0.406];
 const List<double> _imagenetStd = [0.229, 0.224, 0.225];
@@ -182,7 +173,7 @@ class DocumentDetector {
     if (input.length != documentModelInputSize * documentModelInputSize * 3) {
       return null;
     }
-    return _detect(input, displayWidth, displayHeight, inset: _liveInset);
+    return _detect(input, displayWidth, displayHeight);
   }
 
   /// Detects a quad in a display-oriented RGBA buffer, as returned by the
@@ -204,12 +195,7 @@ class DocumentDetector {
 
   // ------------------------------------------------------------- inference ---
 
-  DocumentQuad? _detect(
-    Float32List input,
-    int frameWidth,
-    int frameHeight, {
-    int inset = 0,
-  }) {
+  DocumentQuad? _detect(Float32List input, int frameWidth, int frameHeight) {
     final inputTensor = _interpreter.getInputTensor(0);
     final bytes = Uint8List.view(
       input.buffer,
@@ -226,7 +212,7 @@ class DocumentDetector {
       output.offsetInBytes,
       documentModelInputSize * documentModelInputSize,
     );
-    return _quadFromLogits(logits, frameWidth, frameHeight, inset);
+    return _quadFromLogits(logits, frameWidth, frameHeight);
   }
 
   /// Turns the page mask into a quadrilateral in frame coordinates, or null when
@@ -235,7 +221,6 @@ class DocumentDetector {
     Float32List logits,
     int frameWidth,
     int frameHeight,
-    int inset,
   ) {
     const size = documentModelInputSize;
     final mask = Uint8List(size * size);
@@ -252,7 +237,6 @@ class DocumentDetector {
       size: size,
       frameWidth: frameWidth,
       frameHeight: frameHeight,
-      inset: inset,
     );
   }
 }
@@ -264,7 +248,6 @@ DocumentQuad? quadFromMask(
   required int size,
   required int frameWidth,
   required int frameHeight,
-  int inset = 0,
 }) {
   final pixels = _largestComponent(mask, size);
   if (pixels.length < 32) return null;
@@ -273,14 +256,10 @@ DocumentQuad? quadFromMask(
   final quad = _reduceToQuad(hull);
   if (quad == null) return null;
 
-  // Input space -> frame space: the frame was stretched over the input inside
-  // the inset border, so undo both the stretch and the border.
-  final span = size - 2 * inset;
-  double toFrameX(double x) =>
-      ((x - inset) * frameWidth / span).clamp(0.0, frameWidth - 1.0);
-  double toFrameY(double y) =>
-      ((y - inset) * frameHeight / span).clamp(0.0, frameHeight - 1.0);
-  final pts = [for (final p in quad) math.Point(toFrameX(p.x), toFrameY(p.y))];
+  // Input space -> frame space (the frame was stretched to the square input).
+  final sx = frameWidth / size;
+  final sy = frameHeight / size;
+  final pts = [for (final p in quad) math.Point(p.x * sx, p.y * sy)];
   return DocumentQuad(
     topLeft: pts[0],
     topRight: pts[1],
@@ -454,33 +433,25 @@ Float32List prepareYuvInput({
   required int rotationDegrees,
 }) {
   const size = documentModelInputSize;
-  const inner = size - 2 * _liveInset;
   final rotated = rotationDegrees == 90 || rotationDegrees == 270;
   final displayWidth = rotated ? height : width;
   final displayHeight = rotated ? width : height;
 
   // R, G and B for every model pixel, before the tone curve.
   final pixels = Float32List(size * size * 3);
-  final border = Uint8List(size * size);
   final histogram = Int32List(256);
   var out = 0;
   for (var row = 0; row < size; row++) {
-    final insideRow = row >= _liveInset && row < size - _liveInset;
+    final displayTop = row * displayHeight ~/ size;
+    final displayBottom = math.max(
+      displayTop + 1,
+      (row + 1) * displayHeight ~/ size,
+    );
     for (var column = 0; column < size; column++) {
-      if (!insideRow || column < _liveInset || column >= size - _liveInset) {
-        border[row * size + column] = 1;
-        out += 3;
-        continue;
-      }
-      final displayTop = (row - _liveInset) * displayHeight ~/ inner;
-      final displayBottom = math.max(
-        displayTop + 1,
-        (row - _liveInset + 1) * displayHeight ~/ inner,
-      );
-      final displayLeft = (column - _liveInset) * displayWidth ~/ inner;
+      final displayLeft = column * displayWidth ~/ size;
       final displayRight = math.max(
         displayLeft + 1,
-        (column - _liveInset + 1) * displayWidth ~/ inner,
+        (column + 1) * displayWidth ~/ size,
       );
 
       // The display block in sensor coordinates; quarter turns keep it an
@@ -552,22 +523,6 @@ Float32List prepareYuvInput({
       pixels[out++] = luma + 1.772 * cb;
       histogram[luma.round().clamp(0, 255)]++;
     }
-  }
-
-  // The border takes the frame's own average tone: the model needs background
-  // around the page, which a page that fills the view does not leave.
-  var toneSum = 0.0;
-  var toneCount = 0;
-  for (var value = 0; value < histogram.length; value++) {
-    toneSum += value * histogram[value];
-    toneCount += histogram[value];
-  }
-  final borderTone = toneCount == 0 ? 0.0 : toneSum / toneCount;
-  for (var pixel = 0; pixel < size * size; pixel++) {
-    if (border[pixel] == 0) continue;
-    pixels[pixel * 3] = borderTone;
-    pixels[pixel * 3 + 1] = borderTone;
-    pixels[pixel * 3 + 2] = borderTone;
   }
 
   // Auto-levels, then ImageNet normalisation, in one pass.
