@@ -635,3 +635,22 @@ only report 4 points, so when a page runs off the frame there are no corners to 
 nothing. That is why Lens uses a *mask* - a mask can outline the part of the page that is still
 visible. If "page fills the view" has to be outlined rather than captured whole, that is a
 segmentation job, not a corner job.
+## The mirrored margin fixed the fake quad and lost the detector entirely (2026-10-28)
+
+Tried on the M34 after replacing the black border with a mirrored one: **no quad at all**, on a real
+page. So the border was doing two jobs at once - it fabricated a frame-shaped document (which is what
+the user saw) *and* it was the only reason anything scored above the 0.3 threshold. Mirroring removes
+the fabrication and, with it, the margin the model apparently needs; the same frames now score below
+threshold.
+
+That closes the DocAligner line for this app. Summary of what the last three commits measured:
+
+| variant | page with a margin | page filling the view |
+|---|---|---|
+| no margin | detected (0.9+) on a full-frame sheet | nothing (<0.3) |
+| 32 px black margin | detected | **frame corners** at 0.8-0.94 - a fake page |
+| 32 px mirrored margin | detected on some frames, nothing on the book page | nothing |
+
+The corner-heatmap model needs a margin to see a page, and the only margin a phone can give it is a
+fabricated one, which then reads as a document. There is no version of this that works at the phone's
+usual framing, so the detector is not the right tool for this app.
