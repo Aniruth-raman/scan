@@ -151,7 +151,6 @@ void main() {
     expect(find.text('Reorder'), findsOneWidget);
     expect(find.text('Add'), findsOneWidget);
     // The tray is icon-only in the editor; its labels are semantics.
-    expect(find.byIcon(Icons.crop), findsOneWidget);
     expect(find.byIcon(Icons.rotate_right), findsOneWidget);
     expect(find.byIcon(Icons.delete_outline), findsOneWidget);
     expect(find.byIcon(Icons.more_vert), findsOneWidget);
@@ -168,7 +167,8 @@ void main() {
     expect(pill.left, closeTo(20, 0.5));
     expect(pill.bottom, closeTo(832 - 24, 0.5));
 
-    // 48 x 192 dp tray, 12 dp from the end edge, centred on the content column.
+    // 48 x 144 dp tray (three actions), 12 dp from the end edge, centred on the
+    // content column.
     final tray = tester.getRect(
       find.byWidgetPredicate(
         (widget) =>
@@ -179,7 +179,7 @@ void main() {
       ),
     );
     expect(tray.width, closeTo(48, 0.5));
-    expect(tray.height, closeTo(192, 0.5));
+    expect(tray.height, closeTo(144, 0.5));
     expect(tray.right, closeTo(384 - 12, 0.5));
 
     // Three 120 dp cells: the labels sit on the cell centres.
@@ -241,23 +241,6 @@ void main() {
     final delegate = pageView.childrenDelegate as SliverChildBuilderDelegate;
     expect(delegate.childCount, 1);
     expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('Add hands the pages back to the capture session', (
-    tester,
-  ) async {
-    ReviewResult? result;
-    await pumpReview(tester, <Uint8List>[
-      fakeJpeg(),
-    ], onResult: (value) => result = value);
-
-    await tester.tap(find.text('Add'));
-    await tester.pumpAndSettle();
-
-    expect(result, isNotNull);
-    expect(result!.addMore, isTrue);
-    expect(result!.pages, hasLength(1));
-    expect(nativeCalls, isEmpty, reason: 'an unedited page is already final');
   });
 
   /// Renames the document through the options sheet, the way a user does.
@@ -326,7 +309,7 @@ void main() {
     });
   });
 
-  testWidgets('an edited page is baked through the native transform once', (
+  testWidgets('edits are baked through the native transform once', (
     tester,
   ) async {
     await onAndroid(() async {
@@ -338,10 +321,13 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Grayscale'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Add'));
-      await tester.pumpAndSettle();
 
-      expect(nativeCalls, <String>['transform']);
+      // Editing is state only: nothing is re-encoded until the page is saved.
+      expect(nativeCalls.where((call) => call == 'transform'), isEmpty);
+
+      await finish(tester);
+
+      expect(nativeCalls.where((call) => call == 'transform'), hasLength(1));
     });
   });
 

@@ -718,3 +718,64 @@ Two things that model family explains:
    pixel of a page that fills the frame, and ours had never seen that during training.
 2. Precision: heatmap centroids are sub-pixel, so the 256 px input does not have to be the whole
    frame — no trade between context and accuracy.
+
+## Moved the scan flow to Google's ML Kit Document Scanner (2026-10-28)
+
+Three on-device detectors were built and measured on this repo, and none of them held up on a real
+page held in front of the phone:
+
+| detector | what it cost | what happened on a real page |
+|---|---|---|
+| M-LSD 512 line segments | 3.1 MB | needed segment/Hough fitting; dropped for DocAligner |
+| MobileNetV2-UNet mask (SmartDoc) | 26.5 MB | Dice 0.988 on its own val split, under-segmented a real page to 24% |
+| DocAligner corner heatmaps | 4.8 MB | needs a margin; a black margin fakes a page (full-screen quad), a mirrored one detects nothing |
+
+`AGENTS.md` rule 1 says to take the highest option that works, and Google ships one: the ML Kit
+Document Scanner. `google_mlkit_document_scanner` 0.6.1 (MIT) wraps
+`play-services-mlkit-document-scanner:16.0.0`; the viewfinder, edge detection, crop, rotation and
+filters are downloaded and run by Google Play services, so the app ships **no model at all** and needs
+**no camera permission**.
+
+### The trap that made it look like "crashes on this device"
+
+The first attempt threw a bare `NullPointerException` from inside Google's library the moment the
+scanner was started, on every tap:
+
+```
+W ComponentDiscovery: Could not instantiate ...CommonComponentRegistrar
+Caused by: java.lang.NoSuchMethodException: ...CommonComponentRegistrar.<init> []
+...
+E MethodChannel#google_mlkit_document_scanner: java.lang.NullPointerException
+    at java.util.Objects.requireNonNull(Objects.java:222)
+    at am0.<init>(...)
+```
+
+ML Kit finds its component registrars through the manifest and instantiates them by **reflection**.
+The release build shrinks (R8 is on by default for Flutter release), rewrote that no-arg constructor,
+and the registrar never loaded - so the scanner client was built from nothing. No ML Kit consumer
+proguard rules were in `configuration.txt`, so nothing was keeping them.
+
+Fix: `android/app/proguard-rules.pro`, keeping `com.google.mlkit.**` and
+`com.google.android.gms.internal.mlkit_vision_document_scanner.**`, wired into the release build type.
+Confirmed on the M34: base mode and `ScannerMode.full` both open Google's scanner, detect the page,
+straighten it, and hand pages back to this app.
+
+### What the app looks like now
+
+`My Scans` FAB -> Google's scanner -> `ReviewScreen` (unchanged save path: JPEG to Pictures/Scan,
+PDF to Download/Scan, DB record, tiles). The scanner owns capture, crop, rotation and enhancement;
+review keeps rotate, tone presets, delete, reorder, rename and finish. "Add" re-opens the scanner and
+appends pages.
+
+Deleted, because the platform replaced them: `camera_screen.dart`, `adjust_screen.dart`,
+`document_image_ops.dart`, `document_detector.dart`, `document_detection_worker.dart`,
+`quad_smoother.dart`, their four test files, the two camera integration tests, the 26.5 MB model
+asset, and the `camera` / `tflite_flutter` dependencies. `permission_handler` stays for the folder
+index and the export.
+
+Release APK: **32,982,886 B** (was 67.9 MB on the segmentation branch, 46.2 MB on DocAligner), i.e.
+41,597,638 B under the 74,530,524 B budget. `flutter analyze` clean, 28/28 tests.
+
+Costs accepted, all from the platform owning the flow: the scanner needs Google Play services (the
+module is downloaded on first use, so the very first open can take a moment), the API is still Beta,
+and there is no per-frame corner API - which is why the live outline is gone rather than fixed.

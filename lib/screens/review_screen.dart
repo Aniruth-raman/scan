@@ -3,12 +3,12 @@ import 'package:flutter/services.dart';
 
 import '../design/scan_hero_button.dart';
 import '../design/scan_tokens.dart';
+import '../services/document_scan_session.dart';
 import '../services/native_image_kit.dart';
 import '../services/scan_exporter.dart';
-import 'adjust_screen.dart';
 
-/// One page of the review session: the pixels the crop stage committed, plus
-/// the edits layered on top of them.
+/// One page of the review session: the pixels the scanner committed, plus the
+/// edits layered on top of them.
 ///
 /// Rotation and tone stay as state rather than being baked on every tap, so
 /// switching a tone re-renders from the original instead of stacking JPEG
@@ -21,22 +21,13 @@ class _Page {
   int turns;
 }
 
-/// What the review stage hands back to the capture session.
-///
-/// Either the session was exported — [message] is a snackbar for My Scans — or
-/// the user asked for another page, and the pages go back to the camera so the
-/// filmstrip keeps what was already edited.
+/// What the review stage hands back: the snackbar text when a session was
+/// saved, or null when the user backed out.
 @immutable
 class ReviewResult {
-  const ReviewResult.exported(this.message)
-    : addMore = false,
-      pages = const <Uint8List>[];
+  const ReviewResult(this.message);
 
-  const ReviewResult.addMore(this.pages) : addMore = true, message = null;
-
-  final bool addMore;
-  final String? message;
-  final List<Uint8List> pages;
+  final String message;
 }
 
 /// Review & Edit: the captured pages, per-page editing, and the export.
@@ -125,40 +116,24 @@ class _ReviewScreenState extends State<ReviewScreen> {
     _pageController.jumpToPage(_index);
   }
 
-  Future<void> _recrop() async {
-    final result = await Navigator.push<AdjustResult>(
-      context,
-      MaterialPageRoute(
-        builder: (_) =>
-            AdjustScreen(originalJpeg: _current.bytes, filter: _current.filter),
-      ),
-    );
-    if (!mounted || result == null) return;
-    if (result.addAnother) {
-      await _addPages();
-      return;
-    }
-    setState(() {
-      // The crop stage already rectified, turned and toned the page, so the
-      // review-stage edits start from zero again.
-      _current
-        ..bytes = result.jpeg
-        ..filter = ScanFilter.none
-        ..turns = 0;
-    });
-  }
-
   Future<void> _addPages() async {
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      final pages = await _bake();
+      final added = await DocumentScanSession.run();
       if (!mounted) return;
-      Navigator.pop(context, ReviewResult.addMore(pages));
-    } on Exception catch (error) {
+      setState(() {
+        _busy = false;
+        if (added.isEmpty) return;
+        // Keep the edits already made: only the new pages are appended.
+        _pages.addAll(added.map(_Page.new));
+        _index = _pages.length - 1;
+      });
+      _pageController.jumpToPage(_index);
+    } on PlatformException catch (error) {
       if (!mounted) return;
       setState(() => _busy = false);
-      _snack('Could not prepare the pages: $error');
+      _snack('Scanner could not start: ${error.message ?? error.code}');
     }
   }
 
@@ -193,7 +168,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
       HapticFeedback.mediumImpact();
       if (!mounted) return;
-      Navigator.pop(context, ReviewResult.exported(parts.join(' · ')));
+      Navigator.pop(context, ReviewResult(parts.join(' · ')));
     } on Exception catch (error) {
       if (!mounted) return;
       setState(() => _busy = false);
@@ -516,11 +491,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _TrayAction(
-                icon: Icons.crop,
-                label: 'Crop',
-                onTap: _busy ? null : _recrop,
-              ),
               _TrayAction(
                 icon: Icons.rotate_right,
                 label: 'Rotate',

@@ -10,9 +10,10 @@ import '../data/scan_repository.dart';
 import '../design/scan_tokens.dart';
 import '../design/scan_top_bar.dart';
 import '../models/scan_entry.dart';
+import '../services/document_scan_session.dart';
 import '../services/native_image_kit.dart';
 import '../services/scan_exporter.dart';
-import 'camera_screen.dart';
+import 'review_screen.dart';
 import 'scan_viewer_screen.dart';
 
 /// "My Scans" — the home list.
@@ -170,26 +171,30 @@ class _HistoryScreenState extends State<HistoryScreen>
   }
 
   Future<void> _capture() async {
-    final status = await Permission.camera.request();
-    if (!status.isGranted) {
-      _snack('Camera permission is required to capture.');
+    // Google's scanner owns the whole capture flow - viewfinder, edge
+    // detection, crop, filters - and runs under Play services' camera
+    // permission, so this app asks for nothing and ships no model.
+    final List<Uint8List> pages;
+    try {
+      pages = await DocumentScanSession.run();
+    } on PlatformException catch (error) {
+      if (!mounted) return;
+      _snack('Scanner could not start: ${error.message ?? error.code}');
       return;
     }
-    if (!mounted) return;
-    // The capture stage owns the whole session: shoot, crop, add pages, and
-    // hand pages to review. It reports back only when something was saved.
-    final message = await Navigator.push<String>(
+    if (!mounted || pages.isEmpty) return;
+    final result = await Navigator.push<ReviewResult>(
       context,
       MaterialPageRoute(
-        builder: (_) => CameraScreen(exporter: widget.exporter),
+        builder: (_) => ReviewScreen(pages: pages, exporter: widget.exporter),
       ),
     );
     if (!mounted) return;
     // Coming back to the list is a fresh look: dismissals do not survive it.
     _dismissed.clear();
     _refresh();
-    if (message != null) {
-      _snack(message);
+    if (result != null) {
+      _snack(result.message);
     }
   }
 

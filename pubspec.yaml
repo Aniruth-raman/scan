@@ -31,16 +31,15 @@ dependencies:
   flutter:
     sdk: flutter
 
-  camera: ^0.12.1
   sqflite: ^2.4.5
   path_provider: ^2.1.6
   share_plus: ^13.3.1
   permission_handler: ^13.0.2
   intl: ^0.20.3
   path: ^1.9.1
-  # Runs the bundled M-LSD document-edge model (assets/models/document_edges.tflite).
-  # FFI binding to LiteRT; no Java surface, safe to call from our detection isolate.
-  tflite_flutter: ^0.12.1
+  # Google's on-device document scanner. The scanner UI, the edge detection and
+  # the models are delivered by Play services, so this adds no model to the APK.
+  google_mlkit_document_scanner: ^0.6.1
 
 dev_dependencies:
   flutter_test:
@@ -69,10 +68,8 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  assets:
-    # MobileNetV2 page-segmentation model trained with tools/segmentation
-    # (SmartDoc 2015). Licence/attribution: see tools/segmentation/README.md.
-    - assets/models/document_mask.tflite
+  # No bundled models: the scanner, its models and its UI come from Google Play
+  # services at runtime (google_mlkit_document_scanner).
 
   # To add assets to your application, add an assets section, like this:
   # assets:

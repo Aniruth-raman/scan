@@ -33,46 +33,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.2"
-  camera:
-    dependency: "direct main"
-    description:
-      name: camera
-      sha256: "3f30ca0ff376f91534f23afa2a7aea06ebb6c889fd9e260642437b37e3d9f753"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.12.1"
-  camera_android_camerax:
-    dependency: transitive
-    description:
-      name: camera_android_camerax
-      sha256: faf885ca8140f22df8dc05d1839afc702d0329dd9b0b2f0bc6f9b05f3f20e10c
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.7.6"
-  camera_avfoundation:
-    dependency: transitive
-    description:
-      name: camera_avfoundation
-      sha256: e409a731fad3fca10daa9567cf981720398659e6390f871a4e0f576058ff8940
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.10.3+1"
-  camera_platform_interface:
-    dependency: transitive
-    description:
-      name: camera_platform_interface
-      sha256: b3083b183ef1daa408d5f0c98c8c7ac0325b490695fb4557ff4210fcf04c5984
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.15.0"
-  camera_web:
-    dependency: transitive
-    description:
-      name: camera_web
-      sha256: "5aecf1ac4dd4a949c5a7820e590020acb2bc35425384ab87a030e1739bfe12e2"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.3.5+6"
   characters:
     dependency: transitive
     description:
@@ -179,14 +139,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.0.0"
-  flutter_plugin_android_lifecycle:
-    dependency: transitive
-    description:
-      name: flutter_plugin_android_lifecycle
-      sha256: "3854fe5e3bff0b113c658f260b90c95dea17c92db0f2addeac2e343dd9969785"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.0.35"
   flutter_test:
     dependency: "direct dev"
     description: flutter
@@ -202,6 +154,14 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  google_mlkit_document_scanner:
+    dependency: "direct main"
+    description:
+      name: google_mlkit_document_scanner
+      sha256: "8cc17a7f62d4285298f7970867d24c030d42840068d8b680b988655d50b196ec"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.6.1"
   hooks:
     dependency: transitive
     description:
@@ -487,14 +447,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.2.1"
-  quiver:
-    dependency: transitive
-    description:
-      name: quiver
-      sha256: ea0b925899e64ecdfbf9c7becb60d5b50e706ade44a85b2363be2a22d88117d2
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.2.2"
   record_use:
     dependency: transitive
     description:
@@ -588,14 +540,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.4"
-  stream_transform:
-    dependency: transitive
-    description:
-      name: stream_transform
-      sha256: a00e5f18bffc764f923e7dec1038527f7fe7a1791361a7117f0358193f13d53a
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.1.2"
   string_scanner:
     dependency: transitive
     description:
@@ -636,14 +580,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.12"
-  tflite_flutter:
-    dependency: "direct main"
-    description:
-      name: tflite_flutter
-      sha256: "0bba9040d8decda0960d7abf8eabf32243bf092bc7d0084e8e19681866b0bdbe"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.12.1"
   typed_data:
     dependency: transitive
     description:
