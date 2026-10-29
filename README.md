@@ -60,14 +60,49 @@ Two decisions worth knowing about, because both were arguments with the agent:
 
 ## Build
 
+Tested with Flutter 3.47.8 / Dart 3.13.7.
+
+You need:
+
+- Flutter (stable) and its `flutter` on `PATH`.
+- Android SDK **37** with `platform-tools`, and `ANDROID_HOME` / `sdk.dir` pointing at it.
+- JDK 17 — Android Studio's bundled JDK is the easiest way to get one.
+- A device or an `arm64-v8a` / `armeabi-v7a` emulator. Those are the only two ABIs the build ships,
+  so an x86_64 emulator has nothing to run.
+
 ```powershell
+git clone https://github.com/Aniruth-raman/scan.git
+cd scan
 flutter pub get
-flutter build apk --release      # needs ANDROID_HOME
+
+flutter analyze            # expect no issues
+flutter test               # unit tests only, no device needed
+
+# one APK for both ABIs
+flutter build apk --release
+# or the two APKs that `release/` holds
+flutter build apk --release --split-per-abi
 ```
 
-`flutter analyze` is clean. `flutter test` covers the detector and its corner guard, the quad
+The output lands in `build/app/outputs/flutter-apk/`. To put it on a device:
+
+```powershell
+adb install -r build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+# or, without adb:
+flutter run --release
+```
+
+Nothing has to be downloaded or decoded first: the detector model is committed in
+`assets/models/`, and the `lens.apk` / `.rea/` reference material is only for the people doing the
+reverse-engineering work — the build never reads it.
+
+Scope: `flutter analyze` is clean. `flutter test` covers the detector and its corner guard, the quad
 smoother, the exporter and the review screen. `integration_test/` holds the two on-device flows
 (camera and PDF); they need a real camera, so they do not run on a host.
+
+Releases are currently signed with the debug key so `flutter build apk --release` works with no
+keystore. That is a known open task, not a design decision — see `docs/plan.md` → Next.
+
 
 ## The working notes
 
