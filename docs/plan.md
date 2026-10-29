@@ -602,4 +602,20 @@ Sizes: **42,921,309 B** (+634,772 vs the D1 baseline, still 10.0 MB under the 52
 
 ### Next
 
-Nothing outstanding for P0–P8.
+Open on `master`. Both are user-requested (2026-10-29); neither has evidence gathered yet, so rule 3
+applies before any code is written.
+
+1. **Quieter output from the scan filter.** Post-capture pages read as grainy in flat, bright areas
+   and show ringing along text edges. The tone stage is `applyCleanup` in `ScanImageKit.kt`
+   (grey-world white balance + percentile stretch); it is a substitute for Lens's opaque
+   `CleanupImage`, so stretching a slightly noisy capture also stretches its noise. Start by
+   measuring the noise on a real capture and by checking what the original does after cleanup;
+   the fix must stay on the native side (`ColorMatrix`, `RenderEffect`, GPU shader), not a new
+   per-pixel Dart loop and not a new dependency.
+2. **Sign release builds with a private key.** `android/app/build.gradle.kts` still signs `release`
+   with `signingConfigs.getByName("debug")`. Needs a real upload keystore kept outside the repo, its
+   credentials in a git-ignored `android/key.properties`, and the debug fallback deleted so a
+   release build can never silently ship debug-signed again. Note: the APKs in `release/` are
+   debug-signed, so installs signed with the new key will not update over them - they need an
+   uninstall first.
+
